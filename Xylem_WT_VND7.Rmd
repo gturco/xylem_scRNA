@@ -1,0 +1,150 @@
+---
+title: "Alginment of data"
+output: html_notebook
+---
+
+```{r}
+vnd7.data <- read.csv("star_gene_exon_tagged.clean_at_199cells_induced.dge.csv",sep=',', row.names = 'GENE')
+head(vnd7.data)
+vnd7 <- CreateSeuratObject(raw.data = vnd7.data)
+
+wt.data <- read.csv("star_gene_exon_tagged.clean_at_198cells_uninduced.dge",sep=',', row.names = 'GENE')
+head(wt.data)
+wt <- CreateSeuratObject(raw.data = wt.data)
+```
+
+QC WT
+```{r}
+cholor.genes <- grep(pattern = "^ATCG", x = rownames(x = wt@data), value = TRUE)
+mito.genes <- grep(pattern = "^ATMG", x = rownames(x = wt@data), value = TRUE)
+percent.mito <- colSums(wt@raw.data[mito.genes, ]) / colSums(wt@raw.data)
+# AddMetaData adds columns to object@data.info, and is a great place to stash QC stats
+wt <- AddMetaData(object = wt, metadata = percent.mito, col.name = "percent.mito")
+VlnPlot(object = wt, features.plot = c("nGene", "nUMI", "percent.mito"), nCol = 3)
+
+par(mfrow = c(1, 2))
+GenePlot(object = wt, gene1 = "nUMI", gene2 = "percent.mito")
+GenePlot(object = wt, gene1 = "nUMI", gene2 = "nGene")
+
+# We filter out cells that have unique gene counts over 2,500 or less than 200
+# Note that low.thresholds and high.thresholds are used to define a 'gate'
+# -Inf and Inf should be used if you don't want a lower or upper threshold.
+wt <- FilterCells(object = wt, subset.names = c("nGene", "percent.mito"), low.thresholds = c(200, -Inf), high.thresholds = c(25000, 0.010))
+
+```
+QC VND7
+```{r}
+cholor.genes <- grep(pattern = "^ATCG", x = rownames(x = vnd7@data), value = TRUE)
+mito.genes <- grep(pattern = "^ATMG", x = rownames(x = vnd7@data), value = TRUE)
+percent.mito <- colSums(vnd7@raw.data[mito.genes, ]) / colSums(vnd7@raw.data)
+# AddMetaData adds columns to object@data.info, and is a great place to stash QC stats
+vnd7 <- AddMetaData(object = vnd7, metadata = percent.mito, col.name = "percent.mito")
+VlnPlot(object = vnd7, features.plot = c("nGene", "nUMI", "percent.mito"), nCol = 3)
+
+par(mfrow = c(1, 2))
+GenePlot(object = vnd7, gene1 = "nUMI", gene2 = "percent.mito")
+GenePlot(object = vnd7, gene1 = "nUMI", gene2 = "nGene")
+
+# We filter out cells that have unique gene counts over 2,500 or less than 200
+# Note that low.thresholds and high.thresholds are used to define a 'gate'
+# -Inf and Inf should be used if you don't want a lower or upper threshold.
+vnd7 <- FilterCells(object = vnd7, subset.names = c("nGene", "percent.mito"), low.thresholds = c(200, -Inf), high.thresholds = c(50000, 0.010))
+
+```
+
+
+Normalize data
+```{r}
+vnd7 <- NormalizeData(vnd7)
+vnd7 <- ScaleData(vnd7)
+vnd7 <- FindVariableGenes(vnd7, do.plot = F)
+
+wt <- NormalizeData(wt)
+wt <- ScaleData(wt)
+wt <- FindVariableGenes(wt, do.plot = F)
+```
+
+
+
+#alignment
+
+```{r}
+## do i need this?
+hvg.vnd7 <- rownames(head(vnd7@hvg.info, 1000))
+hvg.wt <- rownames(head(wt@hvg.info, 1000)) 
+hvg.union <- union(hvg.wt, hvg.vnd7)
+
+
+wt@meta.data[, "condition"] <- "uninduced"
+vnd7@meta.data[, "condition"] <- "induced"
+
+#pbmc <- RunCCA(wt, vnd7, genes.use = hvg.union)
+pbmc <- RunCCA(wt,vnd7)
+
+
+## what is point of cca or other methods
+p1 <- DimPlot(pbmc, reduction.use = "cca", group.by = "condition", pt.size=0.5)
+```
+# chossing cc
+```{r}
+DimHeatmap(pbmc, reduction.type = "cca", cells.use = 500, dim.use = 1:9, do.balanced = T)
+DimHeatmap(pbmc, reduction.type = "cca", cells.use = 500, dim.use = 10:18, do.balanced = T)
+```
+
+
+```{r}
+pbmc <- CalcVarExpRatio(pbmc, reduction.type = "pca", grouping.var = "condition", dims.use = 1:10)
+# We discard cells where the variance explained by CCA is <2-fold  (ratio < 0.5) compared to PCA
+pbmc.all.save <- pbmc
+pbmc <- SubsetData(pbmc, subset.name = "var.ratio.pca", accept.low = 0.5)
+pbmc.discard <- SubsetData(pbmc.all.save, subset.name = "var.ratio.pca", accept.high = 0.5) 
+median(pbmc@meta.data[, "nGene"])
+```
+
+
+```{r}
+
+pbmc <- AlignSubspace(pbmc, reduction.type = "cca", grouping.var = "condition", dims.align = 1:10)
+pbmc <- RunTSNE(pbmc, reduction.use = "cca.aligned", dims.use = 1:10, do.fast = T)
+pbmc <- FindClusters(pbmc, reduction.type = "cca.aligned", dims.use = 1:10, save.SNN = T) 
+p1 <- TSNEPlot(pbmc, group.by = "condition", do.return = T, pt.size = 0.5)
+p2 <- TSNEPlot(pbmc, do.return = T, pt.size = 0.5)
+p1
+
+```
+
+```{r}
+## should have 9 populations here not 6
+p2
+
+```
+
+## Geneplot
+## Otheruseful plotting tools!
+http://satijalab.org/seurat/seurat_clustering_tutorial_part1.html
+#Dotplot might be intresting too
+
+```{r}
+head(wt@scale.data)
+head(wt@hvg.info)
+
+wt@scale.data["AT1G71930",]
+
+library(ggplot2)
+x <- data.frame(wt@scale.data["AT1G71930",],wt@scale.data["AT5G12870",])
+colnames(x) <- c("v","myb")
+
+ggplot(data = x, aes(v,myb)) + geom_point()
+
+GenePlot(object = wt, gene1 = "AT1G71930", gene2 = "AT5G12870",cex.use = 1)
+GenePlot(object = vnd7, gene1 = "AT1G71930", gene2 = "AT5G12870",cex.use = 1)
+
+
+
+y <- data.frame(vnd7@scale.data["AT1G71930",],vnd7@scale.data["AT5G12870",])
+colnames(y) <- c("v","myb")
+## will the normalization mess with low varance genes... like vnd7
+ggplot(data = y, aes(v,myb)) + geom_point()
+
+```
+

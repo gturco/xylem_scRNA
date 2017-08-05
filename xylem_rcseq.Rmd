@@ -1,0 +1,104 @@
+---
+title: "Working with the merged data"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+# load data and pacakges
+```{r}
+library(Seurat)
+library(cowplot)
+library(Matrix)
+
+merged.data <- read.csv("induced_uninduced_merged.dge.csv",sep=',', row.names = 'GENE')
+merged <- CreateSeuratObject(raw.data = merged.data)
+head(merged.data)
+
+```
+
+
+### QC and selecting cells for further analysis
+While the `CreateSeuratObject` imposes a basic minimum gene-cutoff, you may want to filter out cells at this stage based on technical or biological parameters. Seurat allows you to easily explore QC metrics and filter cells based on any user-defined criteria. In the example below, we visualize gene and molecule counts, plot their relationship, and exclude cells with a clear outlier number of genes detected as potential multiplets. Of course this is not a guaranteed method to exclude cell doublets, but we include this as an example of filtering user-defined outlier cells. We also filter cells based on the percentage of mitochondrial genes present.
+
+```{r qc, results='hide', fig.height=7,fig.width=13}
+# The number of genes and UMIs (nGene and nUMI) are automatically calculated for every object by Seurat.
+# UMI- unqiue molecular idendifier 
+# For non-UMI data, nUMI represents the sum of the non-normalized values within a cell
+
+## what is the purpose of percent mito?
+# We calculate the percentage of mitochondrial genes here and store it in percent.mito using AddMetaData.
+# We use object@raw.data since this represents non-transformed and non-log-normalized counts
+# The % of UMI mapping to MT-genes is a common scRNA-seq QC metric.
+# NOTE: You must have the Matrix package loaded to calculate the percent.mito values.
+cholor.genes <- grep(pattern = "^ATCG", x = rownames(x = merged@data), value = TRUE)
+mito.genes <- grep(pattern = "^ATMG", x = rownames(x = merged@data), value = TRUE)
+percent.mito <- colSums(merged@raw.data[mito.genes, ]) / colSums(merged@raw.data)
+# AddMetaData adds columns to object@data.info, and is a great place to stash QC stats
+merged <- AddMetaData(object = merged, metadata = percent.mito, col.name = "percent.mito")
+VlnPlot(object = merged, features.plot = c("nGene", "nUMI", "percent.mito"), nCol = 3)
+
+# GenePlot is typically used to visualize gene-gene relationships, but can be used for anything 
+# calculated by the object, i.e. columns in object@data.info, PC scores etc.
+# Since there is a rare subset of cells with an outlier level of high mitochondrial percentage
+# and also low UMI content, we filter these as well
+par(mfrow = c(1, 2))
+GenePlot(object = merged, gene1 = "nUMI", gene2 = "percent.mito")
+GenePlot(object = merged, gene1 = "nUMI", gene2 = "nGene")
+
+# We filter out cells that have unique gene counts over 2,500 or less than 200
+# Note that low.thresholds and high.thresholds are used to define a 'gate'
+# -Inf and Inf should be used if you don't want a lower or upper threshold.
+merged <- FilterCells(object = merged, subset.names = c("nGene", "percent.mito"), low.thresholds = c(200, -Inf), high.thresholds = c(50000, 0.10))
+```
+
+
+### Normalizing the data
+
+After removing unwanted cells from the dataset, the next step is to normalize the data. By default, we employ a global-scaling normalization method "LogNormalize" that normalizes the gene expression measurements for each cell by the total expression, multiplies this by a scale factor (10,000 by default), and log-transforms the result. 
+
+
+```{r}
+merged  <- NormalizeData(object = merged, normalization.method = "LogNormalize", scale.factor = 1e4)
+
+
+```
+
+### Detection of variable genes across the single cells
+
+Seurat calculates highly variable genes and focuses on these for downstream analysis. **`FindVariableGenes`** calculates the average expression and dispersion for each gene, places these genes into bins, and then calculates a z-score for dispersion within each bin. This helps control for the relationship between variability and average expression. This function is unchanged from (Macosko *et al*.), but new methods for variable gene expression identification are coming soon. We suggest that users set these parameters to mark visual outliers on the dispersion plot, but the exact parameter settings may vary based on the data type, heterogeneity in the sample, and normalization strategy. The parameters here identify ~2,000 variable genes, and represent typical parameter settings for UMI data that is normalized to a total of 1e4 molecules.
+
+```{r var_genes, fig.height=7, fig.width=11, results='hide'}
+merged <- FindVariableGenes(object = merged, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.0125, x.high.cutoff = 3, y.cutoff = 0.5)
+
+```
+
+
+### Scaling the data and removing unwanted sources of variation
+
+Your single cell dataset likely contains 'uninteresting' sources of variation. This could include not only technical noise, but batch effects, or even biological sources of variation (cell cycle stage). As suggested in Buettner *et al*, NBT, 2015, regressing these signals out of the analysis can improve downstream dimensionality reduction and clustering. To mitigate the effect of these signals, Seurat constructs linear models to predict gene expression based on user-defined variables. The scaled z-scored residuals of these models are stored in the scale.data slot, and  are used for dimensionality reduction and clustering. 
+
+We can regress out cell-cell variation in gene expression driven by batch (if applicable), cell alignment rate (as provided by Drop-seq tools for Drop-seq data),  the number of detected molecules, and mitochondrial gene expression. For cycling cells, we can also learn a 'cell-cycle' score (see example [HERE]) and regress this out as well. In this simple example here for post-mitotic blood cells, we regress on the number of detected molecules per cell as well as the percentage mitochondrial gene content.  
+
+Seurat v2.0 implements this regression as part of the data scaling process. Therefore, the `RegressOut` function has been deprecated, and replaced with the vars.to.regress argument in `ScaleData`.
+
+```{r regress, fig.height=7, fig.width=11, results='hide'}
+merged <- ScaleData(object = merged, vars.to.regress = c("nUMI", "percent.mito"))
+```
+
+
+
+```{r pca}
+merged <- RunPCA(object = merged, pc.genes = merged@var.genes, do.print = TRUE, pcs.print = 1:5, genes.print = 5)
+```
+```{r single-heatmap, warning=FALSE}
+PCHeatmap(object = pbmc, pc.use = 1, cells.use = 500, do.balanced = TRUE, label.columns = FALSE)
+```
+
+```{r multi-heatmap, fig.height=12, fig.width=9, warning=FALSE}
+PCHeatmap(object = pbmc, pc.use = 1:12, cells.use = 500, do.balanced = TRUE, label.columns = FALSE, use.full = FALSE)
+```
+
+
+
