@@ -18,14 +18,16 @@ QC WT
 cholor.genes <- grep(pattern = "^ATCG", x = rownames(x = wt@data), value = TRUE)
 mito.genes <- grep(pattern = "^ATMG", x = rownames(x = wt@data), value = TRUE)
 percent.mito <- colSums(wt@raw.data[mito.genes, ]) / colSums(wt@raw.data)
+percent.cholor <- colSums(wt@raw.data[cholor.genes, ]) / colSums(wt@raw.data)
 # AddMetaData adds columns to object@data.info, and is a great place to stash QC stats
 wt <- AddMetaData(object = wt, metadata = percent.mito, col.name = "percent.mito")
-VlnPlot(object = wt, features.plot = c("nGene", "nUMI", "percent.mito"), nCol = 3)
+wt <- AddMetaData(object = wt, metadata = percent.cholor, col.name = "percent.cholor")
+VlnPlot(object = wt, features.plot = c("nGene", "nUMI", "percent.mito","percent.cholor"), nCol = 4)
 
 par(mfrow = c(1, 2))
 GenePlot(object = wt, gene1 = "nUMI", gene2 = "percent.mito")
+GenePlot(object = wt, gene1 = "nUMI", gene2 = "percent.cholor")
 GenePlot(object = wt, gene1 = "nUMI", gene2 = "nGene")
-
 # We filter out cells that have unique gene counts over 2,500 or less than 200
 # Note that low.thresholds and high.thresholds are used to define a 'gate'
 # -Inf and Inf should be used if you don't want a lower or upper threshold.
@@ -48,7 +50,7 @@ GenePlot(object = vnd7, gene1 = "nUMI", gene2 = "nGene")
 # We filter out cells that have unique gene counts over 2,500 or less than 200
 # Note that low.thresholds and high.thresholds are used to define a 'gate'
 # -Inf and Inf should be used if you don't want a lower or upper threshold.
-vnd7 <- FilterCells(object = vnd7, subset.names = c("nGene", "percent.mito"), low.thresholds = c(200, -Inf), high.thresholds = c(50000, 0.010))
+vnd7 <- FilterCells(object = vnd7, subset.names = c("nGene", "percent.mito"), low.thresholds = c(-Inf, -Inf), high.thresholds = c(50000, 0.010))
 
 ```
 
@@ -58,10 +60,15 @@ Normalize data
 vnd7 <- NormalizeData(vnd7)
 vnd7 <- ScaleData(vnd7)
 vnd7 <- FindVariableGenes(vnd7, do.plot = F)
-
+## can scale the genes to regress out the data this will change the resulting plot
+## regression to remove wegths for what not intrested in
+## markers function for PCA
 wt <- NormalizeData(wt)
 wt <- ScaleData(wt)
 wt <- FindVariableGenes(wt, do.plot = F)
+### look deeaper to chaning the paramters here and decideding on what to use to clusters
+## lowly expressed genes vvariable change the cutt offs  0.05...stricted
+
 ```
 
 
@@ -80,10 +87,12 @@ vnd7@meta.data[, "condition"] <- "induced"
 
 #pbmc <- RunCCA(wt, vnd7, genes.use = hvg.union)
 pbmc <- RunCCA(wt,vnd7)
-
+pbmc <- RunPCA(wt,vnd7)
 
 ## what is point of cca or other methods
 p1 <- DimPlot(pbmc, reduction.use = "cca", group.by = "condition", pt.size=0.5)
+
+p1 <- DimPlot(pbmc, reduction.use = "pca", group.by = "condition", pt.size=0.5)
 ```
 # chossing cc
 ```{r}
