@@ -1,0 +1,151 @@
+---
+title: "Working with the merged data"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+# load data and pacakges
+
+
+```{r}
+library(Seurat)
+library(cowplot)
+library(Matrix)
+
+merged.data <- read.csv("induced_uninduced_merged.dge.csv",sep=',', row.names = 'GENE')
+head(merged.data)
+
+meta.data <- read.csv("metadata.csv",sep=',', row.names = 'CELL')
+head(meta.data)
+
+merged <- CreateSeuratObject(raw.data = merged.data, min.cells = 3, min.genes = 200, project = "4000_ATHA", meta.data = meta.data)
+```
+
+
+
+### QC and selecting cells for further analysis
+While the `CreateSeuratObject` imposes a basic minimum gene-cutoff, you may want to filter out cells at this stage based on technical or biological parameters. Seurat allows you to easily explore QC metrics and filter cells based on any user-defined criteria. In the example below, we visualize gene and molecule counts, plot their relationship, and exclude cells with a clear outlier number of genes detected as potential multiplets. Of course this is not a guaranteed method to exclude cell doublets, but we include this as an example of filtering user-defined outlier cells. We also filter cells based on the percentage of mitochondrial genes present.
+
+```{r}
+
+VlnPlot(merged, c("nGene", "nUMI"), nCol = 2)
+merged <- SubsetData(merged, subset.name = "nGene", accept.high = 12000)
+
+#Normalization
+merged <- NormalizeData(object = merged, normalization.method = "LogNormalize", scale.factor = 1e4)
+```
+
+
+
+```{r}
+merged <- FindVariableGenes(object = merged, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.0125, x.high.cutoff = 3, y.cutoff = 0.5)
+length(x = merged@var.genes)
+```
+
+## Scaling the data and removing unwanted sources of variation
+
+Your single cell dataset likely contains 'uninteresting' sources of variation. This could include not only technical noise, but batch effects, or even biological sources of variation (cell cycle stage). As suggested in Buettner *et al*, NBT, 2015, regressing these signals out of the analysis can improve downstream dimensionality reduction and clustering. To mitigate the effect of these signals, Seurat constructs linear models to predict gene expression based on user-defined variables. The scaled z-scored residuals of these models are stored in the scale.data slot, and  are used for dimensionality reduction and clustering. 
+
+We can regress out cell-cell variation in gene expression driven by batch (if applicable), cell alignment rate (as provided by Drop-seq tools for Drop-seq data),  the number of detected molecules, and mitochondrial gene expression. For cycling cells, we can also learn a 'cell-cycle' score (see example [HERE]) and regress this out as well. In this simple example here for post-mitotic blood cells, we regress on the number of detected molecules per cell as well as the percentage mitochondrial gene content.  
+
+Seurat v2.0 implements this regression as part of the data scaling process. Therefore, the `RegressOut` function has been deprecated, and replaced with the vars.to.regress argument in `ScaleData`.
+
+```{r}
+## find cholor and mito genes to regress out
+cholor.genes <- grep(pattern = "^ATCG", x = rownames(x = merged@data), value = TRUE)
+mito.genes <- grep(pattern = "^ATMG", x = rownames(x = merged@data), value = TRUE)
+percent.mito <- colSums(merged@raw.data[mito.genes, ]) / colSums(merged@raw.data)
+percent.cholor <- colSums(merged@raw.data[cholor.genes, ]) / colSums(merged@raw.data)
+
+# AddMetaData adds columns to object@data.info, and is a great place to stash QC stats
+merged <- AddMetaData(object = merged, metadata = percent.mito, col.name = "percent.mito")
+merged <- AddMetaData(object = merged, metadata = percent.cholor, col.name = "percent.cholor")
+
+
+merged <- ScaleData(object = merged, vars.to.regress = c("nUMI", "percent.mito", "percent.cholor"))
+```
+
+
+```{r pca}
+merged <- RunPCA(object = merged, pc.genes = merged@var.genes, do.print = TRUE, pcs.print = 1:10, genes.print = 10)
+
+#Visualize PCA a few different ways
+PrintPCA(object = merged, pcs.print = 1:5, genes.print = 5, use.full = FALSE)
+VizPCA(object = merged, pcs.use = 1:2)
+PCAPlot(object = merged, dim.1 = 1, dim.2 = 2)
+merged <- ProjectPCA(object = merged, do.print = FALSE)
+
+PCHeatmap(object = merged, pc.use = 1, cells.use = 397, do.balanced = TRUE, label.columns = FALSE)
+PCHeatmap(object = merged, pc.use = 1:12, cells.use = 397, do.balanced = TRUE, label.columns = FALSE, use.full = FALSE)
+
+#Eyeball statistically signficant principal components
+JackStrawPlot(object = merged, PCs = 1:10)
+PCElbowPlot(object = merged)
+```
+
+#Cluster the cells
+```{r}
+merged <- FindClusters(object = merged, reduction.type = "pca", dims.use = 1:7, resolution = 1.6, print.output = 0, save.SNN = TRUE)
+PrintFindClustersParams(object = merged)
+```
+
+
+```{r}
+merged <- RunTSNE(object = merged, dims.use = 1:10, do.fast = TRUE)
+TSNEPlot(object = merged)
+``
+
+
+`
+
+```{r}
+
+cluster1.markers <- FindMarkers(object = merged, ident.1 = 1, min.pct = 0.25)
+print(x = head(x = cluster1.markers, n = 5))
+
+```
+
+```{r}
+FeaturePlot(object = merged, features.plot = c("AT1G71930", "AT5G62380", "AT3G25710"), cols.use = c("grey", "blue"), 
+    reduction.use = "tsne")
+```
+
+#Find marker genes for each cluster taken from JGI
+```{r}
+merged.markers <- FindAllMarkers(object = merged, only.pos = TRUE, min.pct = 0.25, thresh.use = 0.25)
+write.table(merged.markers, file="all_markers_merged.txt",quote=FALSE,sep="\t")
+
+merged.markers %>% group_by(cluster) %>% top_n(2, avg_diff)
+FeaturePlot(object = merged, features.plot = c("AT1G22710", "AT1G79430","AT3G54220","AT5G49270","AT1G79840","AT5G62165"), cols.use = c("grey", "blue"), reduction.use = "tsne", no.legend = FALSE)
+```
+
+
+#Assign various cell identities to clusters (based on metadata, or data from marker genes)
+```{r}
+p1 <- TSNEPlot(object = merged, group.by = "STATE",  do.return = TRUE, pt.size = 0.5)
+plot(p1)
+```
+
+```{r}
+current.cluster.ids <- c(0, 1, 2, 3, 4, 5, 6, 7, 8)
+new.cluster.ids <- c("Hair cells", "Endodermis/quiescent centre mix", "Phloem + CC", "Maturing xylem", "Cortex", "Columella", "2nd cortex pop.", "2nd hair cell pop.", "Developing xylem")
+merged@ident <- plyr::mapvalues(merged@ident, from = current.cluster.ids, to = new.cluster.ids)
+p2 <- TSNEPlot(object = atha, do.label = T, pt.size = 0.5)
+
+```
+
+
+## Graphs to make.. graph like this where it color codes by percentage metaxylem, protoxylem and phlome...
+
+```{r}
+GenePlot(object = merged, gene1 = "AT1G71930", gene2 = "AT5G12870",cex.use = 1)
+GenePlot(object = merged, gene1 = "AT5G12870", gene2 = "AT1G71930",cex.use = 1, use.scaled=TRUE)
+
+GenePlot(object = merged, gene1 = "AT5G12870", gene2 = "AT1G71930",cex.use = 1, use.raw=TRUE)
+?GenePlot
+```
+
+
+
