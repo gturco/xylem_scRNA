@@ -1,0 +1,132 @@
+
+##ICI scores
+
+normalized fragment per million (FPM) expression value 
+```{r}
+matrix_expression = 
+geneA_spec_score * FPM_of_geneA / number of 
+```
+load_data
+
+```{r}
+
+```
+
+
+# Load Functions for ICI score from Kens paper 
+
+```{r}
+#####################################################################################
+#
+# Identity
+#
+# Calculate Index of Cell Identity (ICI)
+#
+#  Idan Efroni (ie10@nyu.edu)
+#  Dec  14th, 2014
+#####################################################################################
+
+# Number of permuations used to calculate significance
+RAND_ITER=1000
+
+# The minimal Spec score that can be used as a marker
+MIN_USEFUL_SPEC= 0.15
+
+#  Arguments
+#    cell - vector of gene expression values
+#    ci_for_mark - spec scores for the markers
+#    markers - list of markers from getMarkerList
+
+getIdentityScore <- function(cell, ci_for_mark, markers){
+	mean(cell[markers]* ci_for_mark) * ((sum(cell[markers]>0))/length(markers))
+}
+#####################################################################################
+#
+#  getIdentity
+#
+#  returns ICIs for a data matrix
+#
+#  Arguments
+#    data - gene expression matrix
+#    ci - spec data structure
+#    markers - list of markers from getMarkerList
+#    returnSig - should significance be calculated
+#    universe - what subset of genes should be used for randomizations
+
+data <- wt@data
+ci <- read.csv("Meri_Xylem.csv")
+markers = ci$Locus
+universe = rownames(gene_expression_matrix)
+
+getIdentity <- function(data, ci, markers, returnSig=FALSE, universe=c()) {
+	
+	hs_scoremat <- matrix(nrow=ncol(data), ncol=length(markers))
+
+	colnames(hs_scoremat) <- names(markers)
+	rownames(hs_scoremat) <- colnames(data)
+	calls <- hs_scoremat
+	sig <- calls
+	all_markers = unlist(markers)
+
+	ci[[1]]["AT1G70210"][[1]]
+	[markers[[mark]],mark]
+	
+	for(cell in 1:nrow(hs_scoremat)) {
+		markers_cell = data[, cell]
+		head(print(markers_cell))
+		for(mark in 1:length(markers)) {
+			print(mark)
+		  hs_scoremat[cell, mark] = getIdentityScore(data[,cell], ci[[1]][markers[[mark]],mark], markers[[mark]])
+			calls[cell, mark] = sum(data[markers[[mark]],cell]>0)
+			if(returnSig) {
+				sig[cell,mark] <- 1-which(order(c(hs_scoremat[cell,mark], getRandomBackground(markers_cell, ci[[1]][markers[[mark]],mark], universe, length(markers[[mark]]))))==1)/(RAND_ITER+1)
+			}
+		}
+	}
+
+	hs_scoremat_norm <- hs_scoremat
+	for(i in 1:nrow(hs_scoremat_norm)) { hs_scoremat_norm[i,] = hs_scoremat_norm[i,]/sum(hs_scoremat_norm[i,]) }
+	hs_scoremat_norm[is.nan(hs_scoremat_norm)]=0
+	if(returnSig) {
+		list(hs_scoremat_norm, hs_scoremat, calls, sig, matrix(nrow=nrow(sig), ncol=ncol(sig), p.adjust(sig, "BH")))
+	} else {
+		list(hs_scoremat_norm, hs_scoremat)
+	}
+}
+```
+
+```{r}
+gene_expression_matrix <- vnd7@data
+ci <- read.csv("Protoxylem.csv")
+markers = ci$Locus
+universe = rownames(gene_expression_matrix)
+
+getIdentity <- function(data, ci){
+  d <- merge(data, ci,by.x = 0, by.y = "Locus")
+  ici_scores <- vector()
+  print(sum(x$CGTGAAGCTTTC * x$Protoxylem)/nrow(ci) * (nrow(x)/nrow(ci)))
+  for(n_cell in 4:ncol(d) -2){
+  cell_ici = sum(d[,n_cell] * d$Protoxylem)/nrow(ci) * (nrow(d)/nrow(ci)) 
+  ici_scores[n_cell-1] <- cell_ici
+  print(d[,n_cell]["AT1G71930"])
+  }
+  return(ici_scores)
+}
+
+
+
+i <- getIdentity(gene_expression_matrix,ci)
+
+
+d <- merge(vnd7@data, ci,by.x = 0, by.y = "Locus")
+print(sum(d$CTCATGACAAGC * d$Protoxylem)/nrow(ci) * (nrow(d)/nrow(ci)))
+
+
+y <- data.frame(as.numeric(vnd7@data["AT1G71930",]),i)
+
+head(y)
+colnames(y) <- c("v","xylem")
+cor(y$v,y$xylem)
+ggplot(data = y, aes(v,xylem)) + geom_point()
+
+```
