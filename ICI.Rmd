@@ -1,17 +1,6 @@
 
 ##ICI scores
 
-normalized fragment per million (FPM) expression value 
-```{r}
-matrix_expression = 
-geneA_spec_score * FPM_of_geneA / number of 
-```
-load_data
-
-```{r}
-
-```
-
 
 # Load Functions for ICI score from Kens paper 
 
@@ -53,11 +42,6 @@ getIdentityScore <- function(cell, ci_for_mark, markers){
 #    returnSig - should significance be calculated
 #    universe - what subset of genes should be used for randomizations
 
-data <- wt@data
-ci <- read.csv("Meri_Xylem.csv")
-markers = ci$Locus
-universe = rownames(gene_expression_matrix)
-
 getIdentity <- function(data, ci, markers, returnSig=FALSE, universe=c()) {
 	
 	hs_scoremat <- matrix(nrow=ncol(data), ncol=length(markers))
@@ -68,9 +52,6 @@ getIdentity <- function(data, ci, markers, returnSig=FALSE, universe=c()) {
 	sig <- calls
 	all_markers = unlist(markers)
 
-	ci[[1]]["AT1G70210"][[1]]
-	[markers[[mark]],mark]
-	
 	for(cell in 1:nrow(hs_scoremat)) {
 		markers_cell = data[, cell]
 		head(print(markers_cell))
@@ -96,37 +77,68 @@ getIdentity <- function(data, ci, markers, returnSig=FALSE, universe=c()) {
 ```
 
 ```{r}
-gene_expression_matrix <- vnd7@data
-ci <- read.csv("Protoxylem.csv")
-markers = ci$Locus
+gene_expression_matrix <- as.data.frame(as.matrix(merged@data))
+ci <- read.csv("spec_scores.csv", row.names="Locus")
+markers <- read.csv("markers.csv", row.names="Locus")
 universe = rownames(gene_expression_matrix)
 
 getIdentity <- function(data, ci){
+  d <- merge(data, ci,by.x = 0, by.y = 0)
+  ### make data matrix of cells X tissue_types 
+  hs_scoremat <- matrix(nrow=ncol(data), ncol=ncol(ci))
+  colnames(hs_scoremat) <- colnames(ci)
+	rownames(hs_scoremat) <- colnames(data)
+  #for each cell
+  for(n_cell in 1:ncol(data)){
+    ### for each marker
+    for(n_marker in 1:ncol(ci)){
+      number_of_tissue_markers <- sum(ci[,n_marker] > 0)
+      number_of_expressed_markers <- sum(d[,n_cell+1] > 0)
+      cell_ici = sum(d[,n_cell+1] * d[,n_marker + ncol(data)])/number_of_tissue_markers * (number_of_expressed_markers/number_of_tissue_markers) 
+      print(n_cell)
+      print(n_marker)
+      hs_scoremat[n_cell, n_marker] = cell_ici
+  }
+    }
+  return(hs_scoremat)
+}
+
+# can use mean if mean kepts all the scores
+
+i <- getIdentity(gene_expression_matrix,ci)
+x <- melt(i)
+colnames(x) <- c("cell","tissue","value")
+library(reshape)
+x <- subset(x, tissue != "Trichoblast")
+ggplot(x, aes(tissue, cell)) + geom_tile(aes(fill = value)) + theme(axis.text=element_text(size=10, angle = 60), axis.text.y = element_blank())
+```
+
+## There is a correlation between VND7 expression and protoxylem ICI score 
+
+```{r}                                                    
+ci <- read.csv("Protoxylem.csv")
+
+getOneIdentity <- function(data, ci){
   d <- merge(data, ci,by.x = 0, by.y = "Locus")
   ici_scores <- vector()
-  print(sum(x$CGTGAAGCTTTC * x$Protoxylem)/nrow(ci) * (nrow(x)/nrow(ci)))
   for(n_cell in 4:ncol(d) -2){
   cell_ici = sum(d[,n_cell] * d$Protoxylem)/nrow(ci) * (nrow(d)/nrow(ci)) 
   ici_scores[n_cell-1] <- cell_ici
-  print(d[,n_cell]["AT1G71930"])
   }
   return(ici_scores)
 }
 
+proto <- getOneIdentity(gene_expression_matrix,ci)
 
 
-i <- getIdentity(gene_expression_matrix,ci)
+y <- data.frame(as.numeric(as.matrix(merged@data["AT1G71930",])),proto)
+colnames(y) <- c("vnd7","xylem")
+cor(y$vnd7,y$xylem)
+ggplot(data = y, aes(vnd7,xylem)) + geom_point()
 
-
-d <- merge(vnd7@data, ci,by.x = 0, by.y = "Locus")
-print(sum(d$CTCATGACAAGC * d$Protoxylem)/nrow(ci) * (nrow(d)/nrow(ci)))
-
-
-y <- data.frame(as.numeric(vnd7@data["AT1G71930",]),i)
-
-head(y)
-colnames(y) <- c("v","xylem")
-cor(y$v,y$xylem)
-ggplot(data = y, aes(v,xylem)) + geom_point()
+```
+### Get Diff expression of VND7 and ICI scores between tissue types
+```{r}
+ggplot(i) + geom_heatmap()
 
 ```
