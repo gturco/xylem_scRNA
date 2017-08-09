@@ -90,7 +90,7 @@ getIdentity <- function(data, ci){
     for(n_marker in 1:ncol(ci)){
       number_of_tissue_markers <- sum(ci[,n_marker] > 0)
       number_of_expressed_markers <- sum(d[,n_cell+1] > 0)
-      cell_ici = sum(d[,n_cell+1] * d[,n_marker + ncol(data)])/number_of_tissue_markers * (number_of_expressed_markers/number_of_tissue_markers) 
+      cell_ici = sum(d[,n_cell+1] * d[,(n_marker + ncol(data))+1])/number_of_tissue_markers       * (number_of_expressed_markers/number_of_tissue_markers) 
       print(n_cell)
       print(n_marker)
       hs_scoremat[n_cell, n_marker] = cell_ici
@@ -100,6 +100,7 @@ getIdentity <- function(data, ci){
 }
 
 ```
+### ICI scores do not match between samples and larger experiment
 
 ```{r}
 gene_expression_matrix <- as.data.frame(as.matrix(merged@data))
@@ -110,16 +111,11 @@ universe = rownames(gene_expression_matrix)
 # can use mean if mean kepts all the scores
 
 i <- getIdentity(gene_expression_matrix,ci)
-
-
-getIdentity(gene_expression_matrix, ci, markers, returnSig=FALSE, universe=c())
-
 summary(i)
 
+library(reshape)
 x <- melt(i)
 colnames(x) <- c("cell","tissue","value")
-library(reshape)
-x <- subset(x, tissue != "Trichoblast")
 ggplot(x, aes(tissue, cell)) + geom_tile(aes(fill = value,vjust=TRUE)) + theme(axis.text=element_text(size=10, angle = 60), axis.text.y = element_blank())
 ```
 
