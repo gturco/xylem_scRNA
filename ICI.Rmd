@@ -149,7 +149,7 @@ universe = rownames(gene_expression_matrix)
 
 # can use mean if mean kepts all the scores
 
-i <- getIdentity(gene_expression_matrix,ci)
+i <- getIdentity(gene_expression_matrix,markers)
 summary(i)
 
 library("pheatmap")
@@ -180,7 +180,7 @@ w <- as.data.frame(as.matrix(wt@data))
 v <- as.data.frame(as.matrix(vnd7@data))
 
 i <- getIdentity(w,ci)
-i2 <- getIdentity(v,ci)
+i2 <- getIdentity(v,markers)
 
 breaksList = seq(0, 0.2, by = 0.001)
 pheatmap(i,breaks=breaksList, color=colorRampPalette(brewer.pal(9,"Blues"))(200))
@@ -207,8 +207,8 @@ ggplot(wt, aes(tissue,value, color=tissue)) + geom_boxplot() +theme(axis.text=el
 
 ```{r}                                                    
 pci <- read.csv("Protoxylem.csv", row.names = "Locus")
-l <- data.frame(ci[,8])
-rownames(l) <- rownames(ci)
+l <- data.frame(markers[,8])
+rownames(l) <- rownames(markers)
 colnames(l) <- c("Protoxylem")
 
 getOneIdentity <- function(data, spec){
@@ -231,6 +231,12 @@ y <- data.frame(as.numeric(as.matrix(merged@data["AT1G71930",])),proto)
 colnames(y) <- c("vnd7","xylem")
 cor(y$vnd7,y$xylem)
 ggplot(data = y, aes(vnd7,xylem)) + geom_point()
+
+x <- data.frame(as.numeric(as.matrix(merged@data["AT1G71930",])),data.frame(as.numeric(as.matrix(merged@data["AT5G12870",]))))
+                                                                                  
+d <- data.frame(x, proto)
+colnames(d) <- c("v","myb","value")
+ggplot(data = d, aes(v,myb,color=value)) + geom_jitter()
 
 ```
 ### ICI for clusters
@@ -268,4 +274,18 @@ getClusterIdentity(cluster_6,ci)
 getClusterIdentity(cluster_7,ci)
 getClusterIdentity(cluster_8,ci)
 
+```
+
+
+```{r}
+
+x <- data.frame(vnd7@data["AT1G71930",],vnd7@data["AT5G12870",])
+colnames(x) <- c("v","myb")
+oe_proto <- subset(oe,tissue="Protoxylem")
+
+d <- merge(x, oe_proto,by.x = 0, by.y = "cell")
+
+ggplot(data = d, aes(v,myb,color=value)) + geom_jitter()
+ggplot(data = d, aes(v,value,color=value)) + geom_jitter()
+cor(d$v,d$value)
 ```
