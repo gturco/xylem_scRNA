@@ -76,12 +76,8 @@ getIdentity <- function(data, ci, markers, returnSig=FALSE, universe=c()) {
 }
 ```
 
+# my function re-writen for my data
 ```{r}
-gene_expression_matrix <- as.data.frame(as.matrix(merged@data))
-ci <- read.csv("spec_scores.csv", row.names="Locus")
-markers <- read.csv("markers.csv", row.names="Locus")
-universe = rownames(gene_expression_matrix)
-
 getIdentity <- function(data, ci){
   d <- merge(data, ci,by.x = 0, by.y = 0)
   ### make data matrix of cells X tissue_types 
@@ -103,33 +99,53 @@ getIdentity <- function(data, ci){
   return(hs_scoremat)
 }
 
+```
+
+```{r}
+gene_expression_matrix <- as.data.frame(as.matrix(merged@data))
+ci <- read.csv("spec_scores.csv", row.names="Locus")
+markers <- read.csv("markers.csv",row.names="Locus")
+universe = rownames(gene_expression_matrix)
+
 # can use mean if mean kepts all the scores
 
 i <- getIdentity(gene_expression_matrix,ci)
+
+
+getIdentity(gene_expression_matrix, ci, markers, returnSig=FALSE, universe=c())
+
+summary(i)
+
 x <- melt(i)
 colnames(x) <- c("cell","tissue","value")
 library(reshape)
 x <- subset(x, tissue != "Trichoblast")
-ggplot(x, aes(tissue, cell)) + geom_tile(aes(fill = value)) + theme(axis.text=element_text(size=10, angle = 60), axis.text.y = element_blank())
+ggplot(x, aes(tissue, cell)) + geom_tile(aes(fill = value,vjust=TRUE)) + theme(axis.text=element_text(size=10, angle = 60), axis.text.y = element_blank())
 ```
 
 ## There is a correlation between VND7 expression and protoxylem ICI score 
 
 ```{r}                                                    
-ci <- read.csv("Protoxylem.csv")
+pci <- read.csv("Protoxylem.csv", row.names = "Locus")
+l <- data.frame(ci[,8])
+rownames(l) <- rownames(ci)
+colnames(l) <- c("Protoxylem")
 
-getOneIdentity <- function(data, ci){
-  d <- merge(data, ci,by.x = 0, by.y = "Locus")
+getOneIdentity <- function(data, spec){
+  d <- merge(data, spec,by.x = 0, by.y = 0)
   ici_scores <- vector()
-  for(n_cell in 4:ncol(d) -2){
-  cell_ici = sum(d[,n_cell] * d$Protoxylem)/nrow(ci) * (nrow(d)/nrow(ci)) 
-  ici_scores[n_cell-1] <- cell_ici
+  for(n_cell in 1:ncol(data)){
+      number_of_tissue_markers <- sum(spec$Protoxylem > 0)
+      number_of_expressed_markers <- sum(d[,n_cell+1] > 0)
+      print(n_cell)
+      cell_ici = sum(d[,n_cell+1] * d$Protoxylem)/number_of_tissue_markers * (number_of_expressed_markers/number_of_tissue_markers) 
+      ici_scores[n_cell] <- cell_ici
   }
   return(ici_scores)
 }
 
-proto <- getOneIdentity(gene_expression_matrix,ci)
-
+proto <- getOneIdentity(gene_expression_matrix,l)
+summary(proto)
 
 y <- data.frame(as.numeric(as.matrix(merged@data["AT1G71930",])),proto)
 colnames(y) <- c("vnd7","xylem")
@@ -137,8 +153,39 @@ cor(y$vnd7,y$xylem)
 ggplot(data = y, aes(vnd7,xylem)) + geom_point()
 
 ```
-### Get Diff expression of VND7 and ICI scores between tissue types
+### ICI for clusters
 ```{r}
-ggplot(i) + geom_heatmap()
+ci <- read.csv("spec_scores.csv", row.names="Locus")
+cluster.markers <- read.table("all_markers_merged.txt", header = TRUE)
+cluster_0 <- subset(cluster.markers, cluster == 0)
+cluster_1 <- subset(cluster.markers, cluster == 1)
+cluster_2 <- subset(cluster.markers, cluster == 2)
+cluster_3 <- subset(cluster.markers, cluster == 3)
+cluster_4 <- subset(cluster.markers, cluster == 4)
+cluster_5 <- subset(cluster.markers, cluster == 5)
+cluster_6 <- subset(cluster.markers, cluster == 6)
+cluster_7 <- subset(cluster.markers, cluster == 7)
+cluster_8 <- subset(cluster.markers, cluster == 8)
+
+getClusterIdentity <- function(cluster, ci){
+  d <- merge(cluster, ci,by.x = "gene", by.y = 0)
+  for(n_marker in 1:ncol(ci)){
+      number_of_tissue_markers <- nrow(d)
+      number_of_expressed_markers <- length(cluster)
+      cell_ici = sum(d$avg_diff * d[,n_marker + ncol(cluster)])/number_of_tissue_markers * number_of_tissue_markers/number_of_expressed_markers
+    print(colnames(ci)[n_marker])
+    print(cell_ici)
+    }
+}
+
+getClusterIdentity(cluster_0,ci)
+getClusterIdentity(cluster_1,ci)
+getClusterIdentity(cluster_2,ci)
+getClusterIdentity(cluster_3,ci)
+getClusterIdentity(cluster_4,ci)
+getClusterIdentity(cluster_5,ci)
+getClusterIdentity(cluster_6,ci)
+getClusterIdentity(cluster_7,ci)
+getClusterIdentity(cluster_8,ci)
 
 ```
