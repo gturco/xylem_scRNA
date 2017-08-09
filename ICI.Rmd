@@ -60,7 +60,10 @@ getIdentity <- function(data, ci, markers, returnSig=FALSE, universe=c()) {
 		  hs_scoremat[cell, mark] = getIdentityScore(data[,cell], ci[[1]][markers[[mark]],mark], markers[[mark]])
 			calls[cell, mark] = sum(data[markers[[mark]],cell]>0)
 			if(returnSig) {
-				sig[cell,mark] <- 1-which(order(c(hs_scoremat[cell,mark], getRandomBackground(markers_cell, ci[[1]][markers[[mark]],mark], universe, length(markers[[mark]]))))==1)/(RAND_ITER+1)
+				
+			  
+			  
+			  sig[cell,mark] <- 1-which(order(c(hs_scoremat[cell,mark], getRandomBackground(markers_cell, ci[[1]][markers[[mark]],mark], universe, length(markers[[mark]]))))==1)/(RAND_ITER+1)
 			}
 		}
 	}
@@ -91,8 +94,6 @@ getIdentity <- function(data, ci){
       number_of_tissue_markers <- sum(ci[,n_marker] > 0)
       number_of_expressed_markers <- sum(d[,n_cell+1] > 0)
       cell_ici = sum(d[,n_cell+1] * d[,(n_marker + ncol(data))+1])/number_of_tissue_markers       * (number_of_expressed_markers/number_of_tissue_markers) 
-      print(n_cell)
-      print(n_marker)
       hs_scoremat[n_cell, n_marker] = cell_ici
   }
     }
@@ -100,7 +101,45 @@ getIdentity <- function(data, ci){
 }
 
 ```
-### ICI scores do not match between samples and larger experiment
+### load data
+# merged
+```{r}
+
+library(Seurat)
+library(cowplot)
+library(Matrix)
+
+merged.data <- read.csv("induced_uninduced_merged.dge.csv",sep=',', row.names = 'GENE')
+head(merged.data)
+meta.data <- read.csv("metadata.csv",sep=',', row.names = 'CELL')
+head(meta.data)
+merged <- CreateSeuratObject(raw.data = merged.data, min.cells = 3, min.genes = 200, project = "4000_ATHA", meta.data = meta.data)
+#QC + Normalization
+#merged <- SubsetData(merged, subset.name = "nGene", accept.high = 12000)
+merged <- NormalizeData(object = merged, normalization.method = "LogNormalize", scale.factor = 1e4)
+```
+
+# unmerged
+
+```{r}
+vnd7.data <- read.csv("star_gene_exon_tagged.clean_at_199cells_induced.dge.csv",sep=',', row.names = 'GENE')
+head(vnd7.data)
+vnd7 <- CreateSeuratObject(raw.data = vnd7.data)
+vnd7 <- SubsetData(vnd7, subset.name = "nGene", accept.high = 12000)
+vnd7 <- NormalizeData(object = vnd7, normalization.method = "LogNormalize", scale.factor = 1e4)
+
+
+wt.data <- read.csv("star_gene_exon_tagged.clean_at_198cells_uninduced.dge",sep=',', row.names = 'GENE')
+head(wt.data)
+wt <- CreateSeuratObject(raw.data = wt.data)
+wt <- SubsetData(wt, subset.name = "nGene", accept.high = 12000)
+wt <- NormalizeData(object = wt, normalization.method = "LogNormalize", scale.factor = 1e4)
+```
+
+
+
+
+### My code for generating ICI scores
 
 ```{r}
 gene_expression_matrix <- as.data.frame(as.matrix(merged@data))
@@ -113,10 +152,55 @@ universe = rownames(gene_expression_matrix)
 i <- getIdentity(gene_expression_matrix,ci)
 summary(i)
 
+library("pheatmap")
+library("RColorBrewer")
+
+mat_row <- data.frame(group = meta.data$STATE)
+rownames(mat_row) <- rownames(i)
+
+mat_colors <- list(group = brewer.pal(2, "Set1"))
+names(mat_colors$group) <- unique(meta.data$STATE)
+
+pheatmap(i, show_rownames=FALSE,   annotation_row= mat_row,
+  annotation_colors = mat_colors, border_color= NA, main="Merged Data")
+
 library(reshape)
+rownames(i) <- meta.data$STATE
 x <- melt(i)
-colnames(x) <- c("cell","tissue","value")
-ggplot(x, aes(tissue, cell)) + geom_tile(aes(fill = value,vjust=TRUE)) + theme(axis.text=element_text(size=10, angle = 60), axis.text.y = element_blank())
+colnames(x) <- c("state","tissue","ICI")
+#rownames(x) <- rownames(gene_expression_matrix)
+ggplot(x, aes(tissue, ICI, color= state)) + geom_boxplot() + theme(axis.text=element_text(size=10, angle = 60), axis.text.y = element_blank())
+
+```
+
+## testing each tissue type
+```{r}
+
+w <- as.data.frame(as.matrix(wt@data))
+v <- as.data.frame(as.matrix(vnd7@data))
+
+i <- getIdentity(w,ci)
+i2 <- getIdentity(v,ci)
+
+breaksList = seq(0, 0.2, by = 0.001)
+pheatmap(i,breaks=breaksList, color=colorRampPalette(brewer.pal(9,"Blues"))(200))
+pheatmap(i2, breaks=breaksList,color=colorRampPalette(brewer.pal(9,"Blues"))(200))
+
+
+
+wt <- melt(i)
+oe <- melt(i2)
+colnames(wt) <- c("cell","tissue","value")
+colnames(oe) <- c("cell","tissue","value")
+
+ggplot(oe, aes(tissue, cell)) + geom_tile(aes(fill = value,vjust=TRUE)) + theme(axis.text=element_text(size=10, angle = 60), axis.text.y = element_blank())
+
+ggplot(wt, aes(tissue, cell)) + geom_tile(aes(fill = value,vjust=TRUE)) + theme(axis.text=element_text(size=10, angle = 60), axis.text.y = element_blank())
+
+ggplot(oe, aes(tissue,value, color=tissue)) + geom_boxplot() +theme(axis.text=element_text(size=10, angle = 60), axis.text.y = element_blank())
+
+ggplot(wt, aes(tissue,value, color=tissue)) + geom_boxplot() +theme(axis.text=element_text(size=10, angle = 60), axis.text.y = element_blank())
+
 ```
 
 ## There is a correlation between VND7 expression and protoxylem ICI score 
