@@ -26,8 +26,10 @@ MIN_USEFUL_SPEC= 0.15
 #    ci_for_mark - spec scores for the markers
 #    markers - list of markers from getMarkerList
 
-getIdentityScore <- function(cell, ci_for_mark, markers){
-	mean(cell[markers]* ci_for_mark) * ((sum(cell[markers]>0))/length(markers))
+getIdentityScore(gene_expression_matrix,1,ci_for_marks, marker_gene_names)
+
+getIdentityScore <- function(data, cell, ci_for_mark, markers){
+  mean(data[markers,cell]* ci_for_mark) * ((sum(data[markers,cell]>0))/length(markers))
 }
 #####################################################################################
 #
@@ -42,32 +44,36 @@ getIdentityScore <- function(cell, ci_for_mark, markers){
 #    returnSig - should significance be calculated
 #    universe - what subset of genes should be used for randomizations
 
-getIdentity <- function(data, ci, markers, returnSig=FALSE, universe=c()) {
-	
-	hs_scoremat <- matrix(nrow=ncol(data), ncol=length(markers))
+getIdentity <- function(data, ci, returnSig=FALSE, universe=c()) {
 
-	colnames(hs_scoremat) <- names(markers)
+	hs_scoremat <- matrix(nrow=ncol(data), ncol=ncol(ci))
+
+	colnames(hs_scoremat) <- colnames(ci)
 	rownames(hs_scoremat) <- colnames(data)
 	calls <- hs_scoremat
 	sig <- calls
-	all_markers = unlist(markers)
+	#all_markers = unlist(markers)
 
 	for(cell in 1:nrow(hs_scoremat)) {
 		markers_cell = data[, cell]
-		head(print(markers_cell))
-		for(mark in 1:length(markers)) {
-			print(mark)
-		  hs_scoremat[cell, mark] = getIdentityScore(data[,cell], ci[[1]][markers[[mark]],mark], markers[[mark]])
-			calls[cell, mark] = sum(data[markers[[mark]],cell]>0)
+		#head(print(markers_cell))
+		for(marker_number in 1:ncol(ci)) {
+			#print(marker_number)
+      tissue_markers <- which(ci[,marker_number] > 0)
+      ci_for_marks <- ci[tissue_markers,marker_number]
+      marker_gene_names <- rownames(ci)[tissue_markers]
+      
+		  hs_scoremat[cell, marker_number] = getIdentityScore(data ,cell ,ci_for_marks, marker_gene_names)
+		  calls[cell, marker_number] = sum(data[marker_gene_names,cell]>0)
 			if(returnSig) {
 				
 			  
 			  
-			  sig[cell,mark] <- 1-which(order(c(hs_scoremat[cell,mark], getRandomBackground(markers_cell, ci[[1]][markers[[mark]],mark], universe, length(markers[[mark]]))))==1)/(RAND_ITER+1)
+			  sig[cell,mark] <- 1-which(order(c(hs_scoremat[cell,mark], getRandomBackground(markers_cell,    ci[[1]][markers[[mark]],mark], universe, length(markers[[mark]]))))==1)/(RAND_ITER+1)
 			}
 		}
 	}
-
+  print(hs_scoremat)
 	hs_scoremat_norm <- hs_scoremat
 	for(i in 1:nrow(hs_scoremat_norm)) { hs_scoremat_norm[i,] = hs_scoremat_norm[i,]/sum(hs_scoremat_norm[i,]) }
 	hs_scoremat_norm[is.nan(hs_scoremat_norm)]=0
@@ -77,11 +83,24 @@ getIdentity <- function(data, ci, markers, returnSig=FALSE, universe=c()) {
 		list(hs_scoremat_norm, hs_scoremat)
 	}
 }
+
+#i2 <- getIdentity(v,markers)
+### NEED TO USE A MERGED LIST FOR MARKERS OTHERWISEWILL GET ONLY NAs and will do math wrong
+d <- merge(gene_expression_matrix, ci,by.x = 0, by.y = 0)
+merged_ci <- d[,399:413]
+rownames(merged_ci) <- d$Row.names
+
+#d <- inner_join(ci,gene_expression_matrix,by = 0 )
+i3 <- getIdentity(gene_expression_matrix,merged_ci)
 ```
+
+
 
 # my function re-writen for my data
 ```{r}
-getIdentity <- function(data, ci){
+
+
+getIdentity <- function(data, ci, random){
   d <- merge(data, ci,by.x = 0, by.y = 0)
   ### make data matrix of cells X tissue_types 
   hs_scoremat <- matrix(nrow=ncol(data), ncol=ncol(ci))
@@ -91,14 +110,65 @@ getIdentity <- function(data, ci){
   for(n_cell in 1:ncol(data)){
     ### for each marker
     for(n_marker in 1:ncol(ci)){
+      cell =  d[,n_cell+1]
+      marker = d[,(n_marker + ncol(data))+1] ### if I mix these the same 15 will still be expressed but on different genes
       number_of_tissue_markers <- sum(ci[,n_marker] > 0)
-      number_of_expressed_markers <- sum(d[,n_cell+1] > 0)
-      cell_ici = sum(d[,n_cell+1] * d[,(n_marker + ncol(data))+1])/number_of_tissue_markers       * (number_of_expressed_markers/number_of_tissue_markers) 
-      hs_scoremat[n_cell, n_marker] = cell_ici
+      
+      
+      ici_scores <- cell * marker
+      number_of_expressed_tissue_markers <- sum(ici_scores > 0)
+      cell_ici = sum(ici_scores)/number_of_tissue_markers * (number_of_expressed_tissue_markers/number_of_tissue_markers)
+      ### double check this is what they are doing in there code....
+      ### this is inncorrect should be not the number of expressed genes but number of expressed markers for that tissue
+      
+      Random_one
+      marker = d[,(n_marker + ncol(data))+1] ### if I mix these the same 15 will still be expressed but on different genes
+      ### different 15 genes chossen as markers from anywhere in population
+      ### Then the ci for that mark for that tissue type needs to be choosen
+      ### prob need to rewrite code so it is more simlar to theirs
+      ### how do i mutiple based on row names...gene_expression_matrix[c("AT1G01010","AT1G01020"),1]
+      marker_number = 5
+      tissue_markers <- which(markers[,marker_number] > 0)
+      ci_for_marks <- markers[tissue_markers,marker_number]
+      marker_gene_names <- rownames(markers)[tissue_markers]
+      cell_m <- gene_expression_matrix[marker_gene_names,1]
+      
+      ci_for_marks * cell_m
+      ## remove NAs and then take the mean...
+      ## total number of tissue markers should not or should include NAs? Not sure...
+      ci_for_marks <- markers[tissue_markers,5]
+                ici_scores <- d[,n_cell+1][c(ranomints of same length)] * d[,(n_marker + ncol(data))+1]
+
   }
     }
   return(hs_scoremat)
 }
+
+
+
+getIdentityScore <- function(cell, ci_for_mark, markers){
+	mean(cell[markers]* ci_for_mark) * ((sum(cell[markers]>0))/length(markers))
+}
+
+
+getRandomBackground <- function(cell, ci_for_mark, universe, marker_num) {
+
+	rand_id_scores=vector()
+	cell = cell[universe]
+
+	for(i in 1:RAND_ITER) {
+		# get marker set
+	  ## grabs random ATGs from cell of same length as marker set
+		### mixes up the genes for the marker set for that tissue
+	  marker_set = sample(1:length(cell), marker_num)
+		rand_id_scores[i] = getIdentityScore(cell, ci_for_mark, marker_set)
+	}
+	rand_id_scores[is.na(rand_id_scores)]=0
+	rand_id_scores
+}
+		
+		
+
 
 ```
 ### load data
@@ -149,7 +219,7 @@ universe = rownames(gene_expression_matrix)
 
 # can use mean if mean kepts all the scores
 
-i <- getIdentity(gene_expression_matrix,markers)
+i <- getIdentity(gene_expression_matrix,ci)
 summary(i)
 
 library("pheatmap")
@@ -171,6 +241,11 @@ colnames(x) <- c("state","tissue","ICI")
 #rownames(x) <- rownames(gene_expression_matrix)
 ggplot(x, aes(tissue, ICI, color= state)) + geom_boxplot() + theme(axis.text=element_text(size=10, angle = 60), axis.text.y = element_blank())
 
+
+## each cell.. uninduced 100% idendity what number are there of cells of each type
+## number of cells that mixed cell id..
+## merstmatic and mature xylem cell propotios...
+#3 give list of 
 ```
 
 ## testing each tissue type
