@@ -28,6 +28,23 @@ MIN_USEFUL_SPEC= 0.15
 
 getIdentityScore(gene_expression_matrix,1,ci_for_marks, marker_gene_names)
 
+getRandomBackground <- function(data, cell, ci_for_mark, marker_num) {
+
+	rand_id_scores=vector()
+	for(i in 1:RAND_ITER) {
+		# get marker set
+	  ## grabs random ATGs from cell of same length as marker set
+		### mixes up the oder of the weights
+	  marker_set_n = sample(1:nrow(data), marker_num)
+	  marker_set <- rownames(data)[marker_set_n]
+		rand_id_scores[i] = getIdentityScore(data,cell, ci_for_mark, marker_set)
+	}
+	rand_id_scores[is.na(rand_id_scores)]=0
+	rand_id_scores
+}
+
+
+
 getIdentityScore <- function(data, cell, ci_for_mark, markers){
   mean(data[markers,cell]* ci_for_mark) * ((sum(data[markers,cell]>0))/length(markers))
 }
@@ -66,10 +83,7 @@ getIdentity <- function(data, ci, returnSig=FALSE, universe=c()) {
 		  hs_scoremat[cell, marker_number] = getIdentityScore(data ,cell ,ci_for_marks, marker_gene_names)
 		  calls[cell, marker_number] = sum(data[marker_gene_names,cell]>0)
 			if(returnSig) {
-				
-			  
-			  
-			  sig[cell,mark] <- 1-which(order(c(hs_scoremat[cell,mark], getRandomBackground(markers_cell,    ci[[1]][markers[[mark]],mark], universe, length(markers[[mark]]))))==1)/(RAND_ITER+1)
+			  sig[cell,marker_number] <- 1-which(order(c(hs_scoremat[cell,marker_number], getRandomBackground(data, cell ,ci_for_marks, length(marker_gene_names))))==1)/(RAND_ITER+1)
 			}
 		}
 	}
@@ -91,7 +105,7 @@ merged_ci <- d[,399:413]
 rownames(merged_ci) <- d$Row.names
 
 #d <- inner_join(ci,gene_expression_matrix,by = 0 )
-i3 <- getIdentity(gene_expression_matrix,merged_ci)
+i3 <- getIdentity(gene_expression_matrix,merged_ci,returnSig=TRUE)
 ```
 
 
