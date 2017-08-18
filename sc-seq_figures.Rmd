@@ -1,0 +1,165 @@
+---
+title: "Figures for sc-RNA"
+output:
+  html_document: default
+  html_notebook: default
+---
+## load data
+
+```{r}
+library(Seurat)
+library(cowplot)
+library(Matrix)
+
+load("ICI_markers_FALSE.RData")
+
+merged.data <- read.csv("induced_uninduced_merged.dge.csv",sep=',', row.names = 'GENE')
+meta.data <- read.csv("metadata.csv",sep=',', row.names = 'CELL')
+merged <- CreateSeuratObject(raw.data = merged.data, min.cells = 3, min.genes = 200, project = "4000_ATHA", meta.data = meta.data)
+#QC + Normalization
+#merged <- SubsetData(merged, subset.name = "nGene", accept.high = 12000)
+merged <- NormalizeData(object = merged, normalization.method = "LogNormalize", scale.factor = 1e4)
+```
+
+
+
+## headmaps of cell proportions 
+
+```{r}
+
+library("pheatmap")
+library("RColorBrewer")
+
+i_norm <- i[[1]]
+
+mat_row <- data.frame(group = meta.data$STATE)
+rownames(mat_row) <- rownames(i_norm)
+
+mat_colors <- list(group = brewer.pal(2, "Set1"))
+names(mat_colors$group) <- unique(meta.data$STATE)
+
+pheatmap(i_norm, show_rownames=FALSE,   annotation_row= mat_row,
+  annotation_colors = mat_colors, border_color= NA, main="Merged Data")
+
+library(reshape)
+rownames(i_norm) <- meta.data$STATE
+x <- melt(i_norm)
+colnames(x) <- c("state","tissue","ICI")
+#rownames(x) <- rownames(gene_expression_matrix)
+ggplot(x, aes(tissue, ICI, color= state)) + geom_boxplot() + theme(axis.text=element_text(size=10, angle = 60))  + scale_colour_manual(values=c("#c6141c","#3261a8"))
+```
+
+## Chiseq test for cell proportions
+[expected and observed](https://docs.google.com/spreadsheets/d/1QSmoyYS6m5f8L2rrecw8aXpg_nXFVLKNE-nGg8QkF6o/edit?usp=sharing)
+
+```{r}
+
+# using the max as a metric
+tissue = colnames(i[[1]])[apply(i[[1]],1,which.max)]
+induced <- as.data.frame(colnames(i[[1]])[apply(i[[1]][0:199,],1,which.max)])
+uninduced <- as.data.frame(colnames(i[[1]])[apply(i[[1]][200:397,],1,which.max)])
+colnames(uninduced) <-  c("tissue")
+summary(induced)
+summary(uninduced)
+
+
+x <- data.frame(tissue,meta.data$STATE)
+colnames(x) <- c("tissue","state")
+x$xylem <- as.numeric(x$tissue == "Protoxylem")
+
+ggplot(x, aes(tissue, group=state, fill=state)) + geom_bar(position = "dodge") +theme(axis.text=element_text(size=10, angle = 60))  + scale_fill_manual(values=c("#c6141c","#3261a8"))
+
+ggplot(x, aes(state, xylem, color= state)) + geom_jitter() + theme(axis.text=element_text(size=10, angle = 60))  + scale_colour_manual(values=c("#c6141c","#3261a8")) + stat_summary(fun.y=mean, colour="darkred", geom="point",                 shape=17, size=10,show_guide = FALSE)
+
+
+
+## using a ICI score above 0.4 as a metric  
+
+i[[3]][i[[1]] >= 0.4] = 1
+i[[3]][i[[1]] < 0.4] = 0
+apply(i[[3]][0:199,],2,sum)
+apply(i[[3]][200:397,],2,sum)
+
+### mixed
+sum(apply(i[[3]][0:199,],1,sum) == 2)
+sum(apply(i[[3]][200:397,],1,sum) == 2)
+```
+
+
+
+## Gene by Gene color coded
+```{r}
+colnames(i[[1]])[8]
+xylem <- i[[1]][,8]
+
+ffl_genes <- data.frame(as.numeric(as.matrix(merged@data["AT1G71930",])),as.numeric(as.matrix(merged@data["AT5G12870",])),as.numeric(as.matrix(merged@data["AT3G08500",])),as.numeric(as.matrix(merged@data["AT5G03260",])),as.numeric(as.matrix(merged@data["AT5G44030",])),as.numeric(as.matrix(merged@data["AT4G18780",])),as.numeric(as.matrix(merged@data["AT5G67210",])))
+                                                                                  
+d <- data.frame(ffl_genes, tissue,xylem)
+colnames(d) <- c("vnd7","myb46","myb83","lac11","cesa4","cesa8","irx15","tissue","xylem_ICI")
+m2 <- melt(d,id.vars = c("vnd7","tissue","xylem_ICI"))
+m2$variable <- factor(m2$variable, c("cesa4","cesa8","irx15","lac11","myb46","myb83"))
+
+ggplot(m2,aes(vnd7, value, color= tissue)) + geom_point()  + facet_wrap(~ variable)
+```
+
+## Compare with current qPCR data
+
+```{r}
+master <- read.csv("~/Documents/Data/qPCR_data/Whole Root VND7 OE - Rmaster.csv", header=TRUE)
+m <- na.omit(master)
+
+ggplot(m,aes(log2(VND7_FC), log2(FC), color= Gene_name)) + geom_point() + geom_smooth(method = "lm", se = TRUE) + facet_wrap(~ Gene_name)
+
+
+```
+```{r}
+ggplot(m2,aes(vnd7, value, color= variable)) + geom_point() + geom_smooth(method = "lm", se = TRUE) + facet_wrap(~ variable)
+```
+
+
+## ICI conversion with VND7 changes
+
+```{r}
+colnames(i[[1]])[8]
+xylem <- i[[1]][,8]
+## if we use the non normalized values do not get as nice of a correlation
+y <- data.frame(as.numeric(as.matrix(merged@data["AT1G71930",])),xylem, tissue)
+colnames(y) <- c("vnd7","xylem_ICI","tissue")
+y$xylem = as.numeric(x$tissue == "Protoxylem")
+cor(y$vnd7,y$xylem_ICI)
+cor(y$vnd7,y$xylem)
+
+ggplot(data = y, aes(vnd7,xylem_ICI,color= tissue)) + geom_point()
+
+y$vnd7_cuts <- cut(y$vnd7,6, labels = 1:6 )
+ggplot(y, aes(vnd7_cuts, xylem)) + geom_jitter() + theme(axis.text=element_text(size=10, angle = 60))  + scale_colour_manual(values=c("#c6141c","#3261a8")) + stat_summary(fun.y=mean, colour="darkred", geom="point",                shape=17, size=10,show_guide = FALSE)
+
+
+
+ggplot(m2,aes(value,xylem_ICI, color= tissue)) + geom_point()  + facet_wrap(~ variable)
+
+
+colnames(i[[1]])[6]
+xylem <- i[[1]][,6]
+y <- data.frame(as.numeric(as.matrix(merged@data["AT1G71930",])),xylem, tissue)
+colnames(y) <- c("vnd7","xylem_ICI","tissue")
+cor(y$vnd7,y$xylem_ICI)
+ggplot(data = y, aes(vnd7,xylem_ICI, color=tissue)) + geom_point()
+
+
+
+```
+
+
+## Subseting populations
+
+```{r}
+summary(d)
+knockout <- subset(d, myb46 ==0 & vnd7 ==0 & myb83 == 0)
+expressed <- subset(d, myb46 !=0 & vnd7 !=0 & myb83 != 0)
+summary(knockout)
+summary(expressed)
+summary(subset(d, myb46 !=0 & vnd7 !=0 & myb83 == 0))
+
+
+```
