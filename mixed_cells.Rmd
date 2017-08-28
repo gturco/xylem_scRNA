@@ -1,0 +1,201 @@
+---
+title: "Mixed_Cell_Population"
+output: html_document
+---
+
+```{r}
+load("p-values/ia.RData")
+load("p-values/ib.RData")
+load("p-values/ic.RData")
+meta.data <- read.csv("metadata.csv",sep=',', row.names = 'CELL')
+```
+
+```{r}
+### These are 1000 permutations
+length(ia[[4]][ia[[4]] <= 0.1])
+length(ib[[4]][ia[[4]] <= 0.1])
+length(ic[[4]][ia[[4]] <= 0.1])
+
+tissue_rep <- rep(colnames(ia[[4]]),100)
+ia_tissue <- tissue_rep[ia[[4]] <= 0.1]
+ib_tissue <- tissue_rep[ib[[4]] <= 0.1]
+ic_tissue <- tissue_rep[ic[[4]] <= 0.1]
+
+sig_tissues <- rbind(ia_tissue,ib_tissue,ic_tissue)
+table(sig_tissues)
+
+
+### This is 100 Permutations
+load("p-values/100_perm.RData")
+i3[[4]][i3[[4]] <= 0.1]
+ici_scores <- i3[[1]]
+ici_scores[i3[[4]] > 0.1] = 0 
+
+### This is where input goes
+ici_scores <- i3[[1]]
+## This is where input is filtered
+ici_scores[i3[[4]] > 0.1] = 0 
+
+```
+
+
+```{r}
+
+library("pheatmap")
+library("RColorBrewer")
+
+
+mat_row <- data.frame(group = meta.data$STATE)
+rownames(mat_row) <- rownames(ici_scores)
+
+mat_colors <- list(group = brewer.pal(2, "Set1"))
+names(mat_colors$group) <- unique(meta.data$STATE)
+
+breaksList = seq(0, 15, by = 0.046)
+
+
+heat_ici <- pheatmap(ici_scores, show_rownames=FALSE,   annotation_row= mat_row,
+  color = colorRampPalette(rev(brewer.pal(n = 11, name = "Spectral")))(length(breaksList)), annotation_colors = mat_colors, border_color= NA)
+
+```
+
+
+## Proptions
+
+```{r}
+library(ggplot2)
+# using the max as a metric
+
+tissue = colnames(ici_scores)[apply(ici_scores,1,which.max)]
+state = meta.data$STATE
+ici_tissue <- data.frame(tissue, state)
+colnames(ici_tissue) <- c("Tissue" ,"State")
+
+ici_tissue$Tissue <- factor(ici_tissue$Tissue, c("Atrichoblast","Columella","Cortext","Endodermis","Late.PPP","Meri..Xylem","Phloem..CC.","Protoxylem","QC","Trichoblast","Pericycle","Protophloem" ,"Undefined"))
+
+ici_tissue[apply(ici_scores,1,sum)  == 0,]$Tissue = "Undefined"
+
+table(ici_tissue)
+
+ggplot(ici_tissue, aes(Tissue, group=State, fill=State)) + geom_bar(position = "dodge") + theme(axis.text=element_text(size=10, angle = 60))  + scale_fill_manual(values=c("#c6141c","#3261a8"))
+
+bar_chart <- ggplot(ici_tissue, aes(State, group=Tissue, fill=Tissue)) + geom_bar(position = "stack")+ theme(axis.text=element_text(size=10, angle = 60))  
+
+
+bar_chart
+```
+
+Pie Charts
+
+```{r}
+
+uninduced <- subset(ici_tissue,state=="uninduced")
+induced <- subset(ici_tissue,state=="induced")
+
+u <- ggplot(uninduced, aes(x=factor(1), fill=Tissue)) + geom_bar(width = 1) + coord_polar(theta = "y")
+i <- ggplot(induced, aes(x=factor(1), fill=Tissue)) + geom_bar(width = 1) + coord_polar(theta = "y")
+
+u
+i
+  
+```
+
+### Cell Plots
+
+```{r}
+library(reshape)
+#ici_scores <- ici_scores[order(ici_tissue$Tissue),]
+ici_scores_norm <- ici_scores/apply(ici_scores,1,sum)
+ici_long <- melt(ici_scores_norm)
+colnames(ici_long) <- c("cell","tissue","value")
+ici_long$state = meta.data$STATE
+ici_long <- subset(ici_long, value != 0)
+
+uninduced <- subset(ici_long, state == "uninduced")
+induced <- subset(ici_long, state == "induced")
+
+ggplot(uninduced, aes(cell,value, group=cell, fill=tissue)) + geom_bar(stat = "identity") +theme(axis.text=NULL) + theme(axis.title.x=element_blank(),
+      axis.text.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.ticks.x=element_blank()) 
+
+
+ggplot(induced, aes(cell,value, group=cell, fill=tissue)) + geom_bar(stat = "identity") +theme(axis.text=NULL) + theme(axis.title.x=element_blank(),
+      axis.text.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+Make a figure
+
+```{r}
+library(cowplot)
+
+plot_grid(heat_ici$gtable, bar_chart, u,i, labels = c("A", "B", "C", "D"), ncol = 2)
+
+```
+FISHER EXACT
+```{r}
+
+
+run_fisher <- function(column_testing, tissue_freq){
+  is_induced = sum(tissue_freq[tissue_freq$State == "induced" & tissue_freq$Tissue ==              column_testing,]$Freq)
+
+not_induced = sum(tissue_freq[tissue_freq$State == "induced" & tissue_freq$Tissue != column_testing,]$Freq)
+
+is_uninduced = sum(tissue_freq[tissue_freq$State == "uninduced" & tissue_freq$Tissue == column_testing,]$Freq)
+
+not_uninduced = sum(tissue_freq[tissue_freq$State == "uninduced" & tissue_freq$Tissue != column_testing,]$Freq)
+
+tissue_test <- matrix(c(is_induced, is_uninduced, not_induced, not_uninduced),
+       nrow = 2,
+       dimnames =
+       list(c("induced", "Uninduced"),
+            c("Protoxylem", "Not Protoxylem")))
+
+
+fisher.test(tissue_test)
+}
+
+tissue_freq <- as.data.frame(table(ici_tissue))
+
+run_fisher("Undefined",tissue_freq)
+run_fisher("Protoxylem",tissue_freq)
+run_fisher("Cortext",tissue_freq)
+run_fisher("Endodermis",tissue_freq)
+run_fisher("Meri..Xylem",tissue_freq)
+
+## Undefined: 3.382e-05
+## Protoxylem: 2.2e-16
+## Cortext: 2.37e-06
+## Endodermis :1.047e-06
+##Meri..Xylem  0.01482
+```
+
+
+Test number of mixed populations
+```{r}
+library(dplyr)
+mixed <- melt(apply(ici_scores > 0,1, sum))
+mixed$state = meta.data$STATE
+table(mixed)
+is_induced <- count(mixed[mixed$value > 1,],c(state))[1,2]
+is_uninduced <- count(mixed[mixed$value > 1,],c(state))[2,2]
+
+not_induced <- count(mixed[mixed$value <= 1,],c(state))[1,2]
+not_uninduced <- count(mixed[mixed$value <= 1,],c(state))[2,2]
+
+
+mixed_test <- matrix(c(as.numeric(is_induced), as.numeric(is_uninduced), as.numeric(not_induced), as.numeric(not_uninduced)),
+       nrow = 2,
+       dimnames =
+       list(c("induced", "Uninduced"),
+            c("Protoxylem", "Not Protoxylem")))
+
+
+fisher.test(mixed_test)
+```
