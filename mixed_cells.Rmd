@@ -27,11 +27,17 @@ table(sig_tissues)
 
 ### This is 100 Permutations
 load("p-values/100_perm.RData")
+load(file="p-values/no_permutations.RData")
+
 i3[[4]][i3[[4]] <= 0.1]
 ici_scores <- i3[[1]]
 ici_scores[i3[[4]] > 0.1] = 0 
 
 ### This is where input goes
+#ici_scores <- rbind(ia[[1]],ib[[1]],ic[[1]] )
+#ici_pvalues <- rbind(ia[[4]],ib[[4]],ic[[4]] )
+
+#ici_scores[ici_pvalues > 0.1] = 0
 ici_scores <- i3[[1]]
 ## This is where input is filtered
 ici_scores[i3[[4]] > 0.1] = 0 
@@ -48,7 +54,9 @@ library("RColorBrewer")
 mat_row <- data.frame(group = meta.data$STATE)
 rownames(mat_row) <- rownames(ici_scores)
 
-mat_colors <- list(group = brewer.pal(2, "Set1"))
+mat_colors <- list(group =c("#000000","#FFFFFF"))
+
+#mat_colors <- list(group = brewer.pal(2, "Set1"))
 names(mat_colors$group) <- unique(meta.data$STATE)
 
 breaksList = seq(0, 15, by = 0.046)
@@ -64,6 +72,7 @@ heat_ici <- pheatmap(ici_scores, show_rownames=FALSE,   annotation_row= mat_row,
 
 ```{r}
 library(ggplot2)
+library("RColorBrewer")
 # using the max as a metric
 
 tissue = colnames(ici_scores)[apply(ici_scores,1,which.max)]
@@ -77,9 +86,9 @@ ici_tissue[apply(ici_scores,1,sum)  == 0,]$Tissue = "Undefined"
 
 table(ici_tissue)
 
-ggplot(ici_tissue, aes(Tissue, group=State, fill=State)) + geom_bar(position = "dodge") + theme(axis.text=element_text(size=10, angle = 60))  + scale_fill_manual(values=c("#c6141c","#3261a8"))
+ggplot(ici_tissue, aes(Tissue, group=State, fill=State)) + geom_bar(position = "dodge", colour="black") + theme(axis.text=element_text(size=10, angle = 60))  + scale_fill_manual(values=c("#000000","#FFFFFF"))
 
-bar_chart <- ggplot(ici_tissue, aes(State, group=Tissue, fill=Tissue)) + geom_bar(position = "stack")+ theme(axis.text=element_text(size=10, angle = 60))  
+bar_chart <- ggplot(ici_tissue, aes(State, group=Tissue, fill=Tissue)) + geom_bar(position = "stack")+ theme(axis.text=element_text(size=10, angle = 60)) + scale_fill_brewer(palette = "Spectral", direction = 2) 
 
 
 bar_chart
@@ -88,12 +97,19 @@ bar_chart
 Pie Charts
 
 ```{r}
+library("wesanderson")
+
 
 uninduced <- subset(ici_tissue,state=="uninduced")
 induced <- subset(ici_tissue,state=="induced")
 
-u <- ggplot(uninduced, aes(x=factor(1), fill=Tissue)) + geom_bar(width = 1) + coord_polar(theta = "y")
-i <- ggplot(induced, aes(x=factor(1), fill=Tissue)) + geom_bar(width = 1) + coord_polar(theta = "y")
+
+u <- ggplot(uninduced, aes(x=factor(1), fill=Tissue)) + geom_bar(width = 1) + coord_polar(theta = "y")  + scale_fill_brewer(palette = "RdYlBu", direction = 2) 
+
+i <- ggplot(induced, aes(x=factor(1), fill=Tissue)) + geom_bar(width = 1) + coord_polar(theta = "y")  + scale_fill_brewer(palette = "RdYlBu", direction = 2) 
+
+#scale_fill_brewer(palette = "Spectral", direction = 2) 
+#scale_fill_manual(values =c(wes_palette("Darjeeling"),wes_palette("Royal2")))
 
 u
 i
