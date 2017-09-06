@@ -61,10 +61,11 @@ names(mat_colors$group) <- unique(meta.data$STATE)
 
 breaksList = seq(0, 15, by = 0.046)
 
+ pheatmap(ici_scores, show_rownames=FALSE,   annotation_row= mat_row,
+  color = colorRampPalette(rev(brewer.pal(n = 11, name = "RdYlBu")))(length(breaksList)), annotation_colors = mat_colors, border_color= NA, filename= "/Users/gturco/Documents/Projects/xylem_R_figures/Figure_2/heatmap.pdf", dpi=600)
 
 heat_ici <- pheatmap(ici_scores, show_rownames=FALSE,   annotation_row= mat_row,
-  color = colorRampPalette(rev(brewer.pal(n = 11, name = "Spectral")))(length(breaksList)), annotation_colors = mat_colors, border_color= NA)
-
+  color = colorRampPalette(rev(brewer.pal(n = 11, name = "RdYlBu")))(length(breaksList)), annotation_colors = mat_colors, border_color= NA)
 ```
 
 
@@ -72,6 +73,7 @@ heat_ici <- pheatmap(ici_scores, show_rownames=FALSE,   annotation_row= mat_row,
 
 ```{r}
 library(ggplot2)
+library("ggsignif")
 library("RColorBrewer")
 # using the max as a metric
 
@@ -80,17 +82,39 @@ state = meta.data$STATE
 ici_tissue <- data.frame(tissue, state)
 colnames(ici_tissue) <- c("Tissue" ,"State")
 
-ici_tissue$Tissue <- factor(ici_tissue$Tissue, c("Atrichoblast","Columella","Cortext","Endodermis","Late.PPP","Meri..Xylem","Phloem..CC.","Protoxylem","QC","Trichoblast","Pericycle","Protophloem" ,"Undefined"))
+ici_tissue$Tissue <- factor(ici_tissue$Tissue, levels = c("Protoxylem","Trichoblast","Endodermis","Cortext","Columella","Atrichoblast","Meri..Xylem","Late.PPP","Phloem..CC.","Protophloem","QC","Pericycle" ,"Undefined"))
+
 
 ici_tissue[apply(ici_scores,1,sum)  == 0,]$Tissue = "Undefined"
 
 table(ici_tissue)
 
-ggplot(ici_tissue, aes(Tissue, group=State, fill=State)) + geom_bar(position = "dodge", colour="black") + theme(axis.text=element_text(size=10, angle = 60))  + scale_fill_manual(values=c("#000000","#FFFFFF"))
+# bar_chart_dodge <-
 
-bar_chart <- ggplot(ici_tissue, aes(State, group=Tissue, fill=Tissue)) + geom_bar(position = "stack")+ theme(axis.text=element_text(size=10, angle = 60)) + scale_fill_brewer(palette = "Spectral", direction = 2) 
+ici_melt <- melt(table(ici_tissue))
 
 
+ici_melt$Tissue <- factor(ici_melt$Tissue, levels = c("Protoxylem","Trichoblast","Endodermis","Cortext","Columella","Atrichoblast","Meri..Xylem","Late.PPP","Phloem..CC.","Protophloem","QC","Pericycle" ,"Undefined"))
+
+bar_chart_dodge <- ggplot(ici_melt, aes(Tissue,value)) + geom_bar(aes(fill=State),position = "dodge", stat="identity",colour="black") + theme(axis.text=element_text(size=10, angle = 60))  + scale_fill_manual(values=c("#000000","#FFFFFF")) + geom_signif(y_position=c(73,70,45, 40,55), xmin=c(0.8, 1.8, 2.8,3.8, 12.8), xmax=c(1.2, 2.2, 3.2, 4.2, 13.2),
+              annotation=rep("***", 5), tip_length=0)
+
+
+ggplot(ici_melt, aes(Tissue,value)) + geom_bar(aes(fill=State),position = "dodge", stat="identity",colour="black", size=0.2) +  scale_fill_manual(values=c("#000000","#FFFFFF")) + geom_signif(y_position=c(73,70,45, 40,55), xmin=c(0.8, 1.8, 2.8,3.8, 12.8), xmax=c(1.2, 2.2, 3.2, 4.2, 13.2),
+annotation=rep("***", 5), tip_length=0, size=0.2, textsize=2) + theme_classic() +  theme(legend.position ="none", text=element_text(size=7), panel.margin = unit(0, "cm"), axis.ticks = element_line(size = 0.1), axis.line = element_line(size = 0.1), axis.ticks.length = unit(0.05, "cm"), axis.ticks.margin =unit(0, "cm")) + xlab(NULL) + ylab(NULL) + ylim(0,75)
+
+
+ggsave("/Users/gturco/Documents/Projects/xylem_R_figures/Figure_2/Bar_dodge.pdf", width=4.70, height=3.2, dpi=600, units="cm") 
+
+
+ggplot(ici_melt, aes(Tissue,value)) + geom_bar(aes(fill=State),position = "dodge", stat="identity",colour="black", size=0.2) +  scale_fill_manual(values=c("#000000","#FFFFFF")) + geom_signif(y_position=c(73,70,45, 40,55), xmin=c(0.8, 1.8, 2.8,3.8, 12.8), xmax=c(1.2, 2.2, 3.2, 4.2, 13.2),
+annotation=rep("***", 5), tip_length=0, size=0.2, textsize=2) + theme_classic() +  theme(text=element_text(size=7), panel.margin = unit(0, "cm"), axis.ticks = element_line(size = 0.1), axis.line = element_line(size = 0.1), axis.ticks.length = unit(0.05, "cm"), axis.ticks.margin =unit(0, "cm")) + xlab(NULL) + ylab(NULL) + ylim(0,75)
+
+ggsave("/Users/gturco/Documents/Projects/xylem_R_figures/Figure_2/Ledend_Bar_dodge.pdf", width=4.70, height=3.2, dpi=600, units="cm")
+
+bar_chart <- ggplot(ici_tissue, aes(State, group=Tissue, fill=Tissue)) + geom_bar(position = "stack")+ theme(axis.text=element_text(size=10, angle = 60)) + scale_fill_brewer(palette = "RdYlBu", direction = 2) 
+
+bar_chart_dodge
 bar_chart
 ```
 
@@ -100,19 +124,28 @@ Pie Charts
 library("wesanderson")
 
 
-uninduced <- subset(ici_tissue,state=="uninduced")
-induced <- subset(ici_tissue,state=="induced")
+uninduced <- subset(ici_tissue,State=="uninduced")
+induced <- subset(ici_tissue,State=="induced")
 
+getPalette = colorRampPalette(brewer.pal(11,"RdYlBu"))
+p = getPalette(14)
 
-u <- ggplot(uninduced, aes(x=factor(1), fill=Tissue)) + geom_bar(width = 1) + coord_polar(theta = "y")  + scale_fill_brewer(palette = "RdYlBu", direction = 2) 
-
-i <- ggplot(induced, aes(x=factor(1), fill=Tissue)) + geom_bar(width = 1) + coord_polar(theta = "y")  + scale_fill_brewer(palette = "RdYlBu", direction = 2) 
+u <- ggplot(uninduced, aes(x=factor(1), fill=Tissue)) + geom_bar(width = 1) + coord_polar(theta = "y")  + scale_fill_brewer(palette = "RdYlBu", direction = 2)
+  
+i <- ggplot(induced, aes(x=factor(1), fill=Tissue)) + geom_bar(width = 1) + coord_polar(theta = "y")  + scale_fill_brewer(palette = "RdYlBu", direction = 2)
 
 #scale_fill_brewer(palette = "Spectral", direction = 2) 
 #scale_fill_manual(values =c(wes_palette("Darjeeling"),wes_palette("Royal2")))
 
 u
 i
+
+##ggsave("/Users/gturco/Documents/Projects/xylem_R_figures/Figure_2/Ledend_pie.pdf", width=4.70, height=6.2, dpi=600, units="cm")
+
+
+ggplot(induced, aes(x=factor(1), fill=Tissue)) + geom_bar(width = 1) + coord_polar(theta = "y")  + scale_fill_brewer(palette = "RdYlBu", direction = 2) + theme_classic() +  theme(legend.position ="none")
+
+ggsave("/Users/gturco/Documents/Projects/xylem_R_figures/Figure_2/induced_pie.pdf", width=4.70, height=6.2, dpi=600, units="cm")
   
 ```
 
@@ -151,7 +184,7 @@ Make a figure
 ```{r}
 library(cowplot)
 
-plot_grid(heat_ici$gtable, bar_chart, u,i, labels = c("A", "B", "C", "D"), ncol = 2)
+plot_grid(heat_ici$gtable, bar_chart_dodge, u,i, labels = c("A", "B", "C", "D"), ncol = 2)
 
 ```
 FISHER EXACT
@@ -179,12 +212,17 @@ fisher.test(tissue_test)
 
 tissue_freq <- as.data.frame(table(ici_tissue))
 
-run_fisher("Undefined",tissue_freq)
-run_fisher("Protoxylem",tissue_freq)
-run_fisher("Cortext",tissue_freq)
-run_fisher("Endodermis",tissue_freq)
+run_fisher("Undefined",tissue_freq) # *** 13
+run_fisher("Protoxylem",tissue_freq) # *** 10
+run_fisher("Cortext",tissue_freq) # *** 3
+run_fisher("Endodermis",tissue_freq) # *** 4
+run_fisher("Atrichoblast",tissue_freq)
+run_fisher("Columella",tissue_freq)
+run_fisher("Late.PPP",tissue_freq)
+run_fisher("Phloem..CC.",tissue_freq)
 run_fisher("Meri..Xylem",tissue_freq)
-
+run_fisher("QC",tissue_freq)
+run_fisher("Trichoblast",tissue_freq) ## *** 12
 ## Undefined: 3.382e-05
 ## Protoxylem: 2.2e-16
 ## Cortext: 2.37e-06
