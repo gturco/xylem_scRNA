@@ -1,0 +1,194 @@
+
+---
+title: "Determine ICI scores"
+output: html_document
+---
+
+##ICI scores
+
+
+# Load Functions for ICI score from Kens paper 
+The code below was changed to work with Dropseq data and is from Idan Efroni orginally. 
+
+Efroni, I., Ip, P. L., Nawy, T., Mello, A., & Birnbaum, K. D. (2015). Quantification of cell identity from single-cell gene expression profiles. Genome Biol, 16, 9. doi:10.1186/s13059-015-0580-x
+
+Marker genes were also taken from this file
+
+```{r}
+#####################################################################################
+#
+# Identity
+#
+# Calculate Index of Cell Identity (ICI)
+#
+#  Idan Efroni (ie10@nyu.edu)
+#  Dec  14th, 2014
+#####################################################################################
+
+# Number of permuations used to calculate significance
+RAND_ITER=100
+
+# The minimal Spec score that can be used as a marker
+MIN_USEFUL_SPEC= 0.15
+
+#  Arguments
+#    cell - vector of gene expression values
+#    ci_for_mark - spec scores for the markers
+#    markers - list of markers from getMarkerList
+
+getRandomBackground <- function(data, cell, ci_for_mark, marker_num) {
+
+	rand_id_scores=vector()
+	for(i in 1:RAND_ITER) {
+		# get marker set
+	  ## grabs random ATGs from cell of same length as marker set
+		### mixes up the oder of the weights
+	  marker_set_n = sample(1:nrow(data), marker_num)
+	  marker_set <- rownames(data)[marker_set_n]
+		rand_id_scores[i] = getIdentityScore(data,cell, ci_for_mark, marker_set)
+	}
+	rand_id_scores[is.na(rand_id_scores)]=0
+	rand_id_scores
+}
+
+
+
+getIdentityScore <- function(data, cell, ci_for_mark, markers){
+  mean(data[markers,cell]* ci_for_mark) * ((sum(data[markers,cell]>0))/length(markers))
+}
+#####################################################################################
+#
+#  getIdentity
+#
+#  returns ICIs for a data matrix
+#
+#  Arguments
+#    data - gene expression matrix
+#    ci - spec data structure
+#    markers - list of markers from getMarkerList
+#    returnSig - should significance be calculated
+#    universe - what subset of genes should be used for randomizations
+
+getIdentity <- function(data, ci, returnSig=FALSE, universe=c()) {
+
+	hs_scoremat <- matrix(nrow=ncol(data), ncol=ncol(ci))
+
+	colnames(hs_scoremat) <- colnames(ci)
+	rownames(hs_scoremat) <- colnames(data)
+	calls <- hs_scoremat
+	sig <- calls
+	#all_markers = unlist(markers)
+
+	for(cell in 1:nrow(hs_scoremat)) {
+		markers_cell = data[, cell]
+		#head(print(markers_cell))
+		for(marker_number in 1:ncol(ci)) {
+			#print(marker_number)
+      tissue_markers <- which(ci[,marker_number] > 0)
+      ci_for_marks <- ci[tissue_markers,marker_number]
+      marker_gene_names <- rownames(ci)[tissue_markers]
+      
+		  hs_scoremat[cell, marker_number] = getIdentityScore(data ,cell ,ci_for_marks, marker_gene_names)
+		  calls[cell, marker_number] = sum(data[marker_gene_names,cell]>0)
+			if(returnSig) {
+			  sig[cell,marker_number] <- 1-which(order(c(hs_scoremat[cell,marker_number], getRandomBackground(data, cell ,ci_for_marks, length(marker_gene_names))))==1)/(RAND_ITER+1)
+			}
+		}
+	}
+  print(hs_scoremat)
+	hs_scoremat_norm <- hs_scoremat
+	for(i in 1:nrow(hs_scoremat_norm)) { hs_scoremat_norm[i,] = hs_scoremat_norm[i,]/sum(hs_scoremat_norm[i,]) }
+	hs_scoremat_norm[is.nan(hs_scoremat_norm)]=0
+	if(returnSig) {
+		list(hs_scoremat_norm, hs_scoremat, calls, sig, matrix(nrow=nrow(sig), ncol=ncol(sig), p.adjust(sig, "BH")))
+	} else {
+		list(hs_scoremat_norm, hs_scoremat)
+	}
+}
+```
+
+```{r}
+# Create Seurat object
+
+# Keep all genes expressed in >= 3 cells, keep all cells with >= 500 genes
+ds.83 <- CreateSeuratObject(raw.data=myb83, min.cells=3, min.genes=500, project="MYB83")
+ds.46 <- CreateSeuratObject(raw.data=myb46, min.cells=3, min.genes=500, project="MYB46")
+ds.col <- CreateSeuratObject(raw.data=WT, min.cells=3, min.genes=500, project="Col")
+
+ds.vnd <- CreateSeuratObject(raw.data=VND7.data, min.cells=3, min.genes=500, project="VND7")
+ds.col2 <- CreateSeuratObject(raw.data=WT2.data, min.cells=3, min.genes=500, project="Col2")
+
+#ds.vnd2 <- CreateSeuratObject(raw.data=VND72.data, min.cells=3, min.genes=500, project="VND72")
+ds.col3 <- CreateSeuratObject(raw.data=WT3.data, min.cells=3, min.genes=500, project="Col3")
+
+ds.all <- MergeSeurat(ds.83, ds.46)
+ds.all <- MergeSeurat(ds.all, ds.col)
+ds.all <- MergeSeurat(ds.all, ds.vnd)
+ds.all <- MergeSeurat(ds.all, ds.col2)
+#ds.all <- MergeSeurat(ds.all, ds.col3)
+#ds.all <- MergeSeurat(ds.all, ds.vnd2)
+# Get rid of original data
+#rm(myb)
+```
+
+```{r}
+VlnPlot(object = ds.all, c("nUMI"), group.by = "orig.ident", nCol = 2)
+VlnPlot(object = ds.all, c("nGene"), group.by = "orig.ident", nCol = 2)
+
+```
+
+
+```{r}
+ds.all <- FilterCells(object = ds.all, subset.names = c("nGene"),low.thresholds = 500, high.thresholds = 12000)
+```
+
+## Genes to potentially regress out
+
+```{r}
+
+setwd("/Users/gturco/Documents/Projects/Drop-Seq/")
+
+
+cholor.genes <- grep(pattern = "^ATCG", x = rownames(x = ds.all@data), value = TRUE)
+percent.cholor <- apply(ds.all@raw.data[cholor.genes, ],2,sum) / apply(ds.all@raw.data,2,sum)
+
+mito.genes <- grep(pattern = "^ATMG", x = rownames(x = ds.all@data), value = TRUE)
+percent.mito <- apply(ds.all@raw.data[mito.genes, ],2,sum) / apply(ds.all@raw.data,2,sum)
+
+protoplast.data <- read.csv("protoplast.csv",sep=',', header = TRUE)
+## can also add LOST to query rather than just INDUCED
+protoplast.genes <- subset(protoplast.data, PROTOPLASTING.EFFECT == "INDUCED" )$Gene.ID
+
+
+protoplast.genes <- intersect(protoplast.genes,rownames(ds.all@raw.data))
+
+percent.protoplast <- apply(ds.all@raw.data[protoplast.genes, ],2,sum) / apply(ds.all@raw.data,2,sum)
+
+
+ds.all <- ScaleData(object = ds.all, vars.to.regress = c("nUMI", "percent.mito","percent.protoplast","percent.cholor"))
+
+```
+
+
+```{r}
+ds.all.avg.ident <- AverageExpression(ds.all, add.ident= "orig.ident" , show.progress = FALSE, use.scale = TRUE, min.pct = 0.25)
+
+ds.all.avg <- AverageExpression(ds.all , show.progress = FALSE, use.scale = TRUE, min.pct = 0.25)
+```
+
+
+Markers list is from: Efroni, I., Ip, P. L., Nawy, T., Mello, A., & Birnbaum, K. D. (2015). Quantification of cell identity from single-cell gene expression profiles. Genome Biol, 16, 9. doi:10.1186/s13059-015-0580-x
+```{r}
+
+markers <- read.csv("markers.csv",row.names="Locus")
+### NEED TO USE A MERGED LIST FOR MARKERS OTHERWISEWILL GET ONLY NAs and will do math wrong
+m <- merge( markers, ds.all.avg,by.x = 0, by.y = 0)
+merged_ci <-  m[,2:16]
+rownames(merged_ci) <- m$Row.names
+
+cluster_i <- getIdentity(ds.all.avg,merged_ci,returnSig=TRUE)
+colnames(cluster_i[[5]])<- colnames(cluster_i[[4]])
+rownames(cluster_i[[5]]) <- seq(0,10)
+cluster_i[[5]]
+```
+

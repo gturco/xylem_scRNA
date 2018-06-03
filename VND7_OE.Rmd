@@ -1,0 +1,187 @@
+---
+title: "Working with the merged VDN7 data"
+output: html_notebook
+---
+  
+  This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+# load data and pacakges
+
+
+```{r}
+library(Seurat)
+library(cowplot)
+library(Matrix)
+
+VND7.data = read.csv("/Users/gturco/Documents/Projects/Drop-Seq/star_gene_exon_tagged.clean_at_199cells_induced.dge.csv", header=T, stringsAsFactors=F, row.names = 'GENE') 
+
+WT2.data = read.csv("/Users/gturco/Documents/Projects/Drop-Seq/star_gene_exon_tagged.clean_at_198cells_uninduced.dge", header=T, stringsAsFactors=F, row.names = 'GENE') 
+
+
+
+ds.vnd <- CreateSeuratObject(raw.data=VND7.data, min.cells=3, min.genes=500, project="VND7_JGI")
+ds.col2 <- CreateSeuratObject(raw.data=WT2.data, min.cells=3, min.genes=500, project="Uninduced_JGI")
+
+
+
+merged <- MergeSeurat(ds.vnd, ds.col2)
+
+
+```
+
+```{r}
+VlnPlot(object = merged, c("nUMI"), group.by = "orig.ident", nCol = 2)
+VlnPlot(object = merged, c("nGene"), group.by = "orig.ident", nCol = 2)
+
+```
+
+
+
+### QC and selecting cells for further analysis
+While the `CreateSeuratObject` imposes a basic minimum gene-cutoff, you may want to filter out cells at this stage based on technical or biological parameters. Seurat allows you to easily explore QC metrics and filter cells based on any user-defined criteria. In the example below, we visualize gene and molecule counts, plot their relationship, and exclude cells with a clear outlier number of genes detected as potential multiplets. Of course this is not a guaranteed method to exclude cell doublets, but we include this as an example of filtering user-defined outlier cells. We also filter cells based on the percentage of mitochondrial genes present.
+
+
+## regress out Cholor, Mito and Protplast genes...
+```{r}
+cholor.genes <- grep(pattern = "^ATCG", x = rownames(x = merged@data), value = TRUE)
+percent.cholor <- colSums(merged@raw.data[cholor.genes, ]) / colSums(merged@raw.data)
+
+mito.genes <- grep(pattern = "^ATMG", x = rownames(x = merged@data), value = TRUE)
+percent.mito <- colSums(merged@raw.data[mito.genes, ]) / colSums(merged@raw.data)
+
+protoplast.data <- read.csv("protoplast.csv",sep=',', header = TRUE)
+## can also add LOST to query rather than just INDUCED
+protoplast.genes <- subset(protoplast.data, PROTOPLASTING.EFFECT == "INDUCED")$Gene.ID
+percent.protoplast <- colSums(merged@raw.data[protoplast.genes[15:20], ]) / colSums(merged@raw.data)
+
+```
+
+
+
+
+```{r}
+
+merged <- AddMetaData(object = merged, metadata = percent.mito, col.name = "percent.mito")
+merged <- AddMetaData(object = merged, metadata = percent.cholor, col.name = "percent.cholor")
+merged <- AddMetaData(object = merged, metadata = percent.protoplast, col.name = "percent.protoplast")
+VlnPlot(object = merged, features.plot = c("nGene", "nUMI", "percent.mito","percent.cholor", "percent.protoplast"), nCol = 5)
+
+
+
+merged <- SubsetData(merged, subset.name = "nGene", accept.high = 10000)
+
+#Normalization
+merged <- NormalizeData(object = merged, normalization.method = "LogNormalize", scale.factor = 1e4)
+
+```
+
+### None of the percentages above are alarmingly high so I say we do not use this as a filter here
+
+```{r}
+
+par(mfrow = c(2, 2))
+GenePlot(object = merged, gene1 = "nUMI", gene2 = "nGene")
+GenePlot(object = merged, gene1 = "nUMI", gene2 = "percent.mito")
+GenePlot(object = merged, gene1 = "nUMI", gene2 = "percent.cholor")
+GenePlot(object = merged, gene1 = "nUMI", gene2 = "percent.protoplast", do.hover=TRUE)
+```
+
+
+
+```{r}
+merged <- FilterCells(object = merged, subset.names = c("nUMI"), 
+                      low.thresholds = c(-Inf), high.thresholds = c(50000))
+
+merged <- NormalizeData(object = merged, normalization.method = "LogNormalize", 
+                        scale.factor = 10000)
+```
+
+```{r}
+merged <- FindVariableGenes(object = merged, mean.function = ExpMean, dispersion.function = LogVMR, x.low.cutoff = 0.0125, x.high.cutoff = 4, y.cutoff = 0.5)
+length(x = merged@var.genes)
+## some perfer strong set of genes to build PCA on which is 0.5
+## play around with these cutt offs and make sure the data makes sense
+## matt does not filter the data at all here.. takes a bit longer
+```
+
+## Scaling the data and removing unwanted sources of variation
+
+
+```{r}
+merged <- ScaleData(object = merged, vars.to.regress = c("nUMI", "percent.mito","percent.protoplast","percent.cholor"))
+save(merged, file = "merged_regress_mito_cholor_protoplast_MARCH_2018.RData")
+
+```
+
+
+
+```{r}
+GenePlot(object = merged, gene1 = "AT1G71930", gene2 = "AT3G08500",cex.use = 1, use.scaled=TRUE)
+
+GenePlot(object = merged, gene1 = "AT5G12870", gene2 = "AT1G71930",cex.use = 1, use.raw=TRUE)
+```
+
+
+
+```{r}
+## find cholor and mito genes to regress out
+cholor.genes <- grep(pattern = "^ATCG", x = rownames(x = merged@data), value = TRUE)
+mito.genes <- grep(pattern = "^ATMG", x = rownames(x = merged@data), value = TRUE)
+## think about adding cycle genes here
+## saw stress genes in mine ask JGI
+## add protoplast genes
+
+merged.data <- read.csv("induced_uninduced_merged.dge.csv",sep=',', row.names = 'GENE')
+head(merged.data)
+
+
+percent.mito <- colSums(merged@raw.data[mito.genes, ]) / colSums(merged@raw.data)
+percent.cholor <- colSums(merged@raw.data[cholor.genes, ]) / colSums(merged@raw.data)
+
+# AddMetaData adds columns to object@data.info, and is a great place to stash QC stats
+merged <- AddMetaData(object = merged, metadata = percent.mito, col.name = "percent.mito")
+merged <- AddMetaData(object = merged, metadata = percent.cholor, col.name = "percent.cholor")
+
+
+merged <- ScaleData(object = merged, vars.to.regress = c("nUMI", "percent.mito", "percent.cholor"))
+```
+
+
+```{r pca}
+merged <- RunPCA(object = merged, pc.genes = merged@var.genes, do.print = TRUE, pcs.print = 1:10, genes.print = 10)
+
+#Visualize PCA a few different ways
+PrintPCA(object = merged, pcs.print = 1:5, genes.print = 5, use.full = FALSE)
+VizPCA(object = merged, pcs.use = 1:2)
+PCAPlot(object = merged, dim.1 = 1, dim.2 = 2)
+merged <- ProjectPCA(object = merged, do.print = FALSE)
+
+PCHeatmap(object = merged, pc.use = 1, cells.use = 397, do.balanced = TRUE, label.columns = FALSE)
+PCHeatmap(object = merged, pc.use = 1:12, cells.use = 397, do.balanced = TRUE, label.columns = FALSE, use.full = FALSE)
+
+#Eyeball statistically signficant principal components
+#JackStrawPlot(object = merged, PCs = 1:10)
+PCElbowPlot(object = merged)
+```
+
+#Cluster the cells
+```{r}
+merged <- FindClusters(object = merged, reduction.type = "pca", dims.use = 1:10, resolution = .6, print.output = 0, save.SNN = TRUE)
+PrintFindClustersParams(object = merged)
+```
+
+
+```{r}
+merged <- RunTSNE(object = merged, dims.use = 1:10, do.fast = TRUE)
+TSNEPlot(object = merged)
+
+
+```
+
+```{r}
+cluster1.markers <- FindMarkers(object = merged, ident.1 = 1, min.pct = 0.25)
+print(x = head(x = cluster1.markers, n = 9))
+
+
+```

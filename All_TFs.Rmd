@@ -1,0 +1,180 @@
+---
+title: "VND7, MYB83 and MYB46 OE comparsion"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Data!
+
+```{r}
+library(Seurat)
+library(cowplot)
+library(Matrix)
+
+
+myb83 = read.table("/Users/gturco/Documents/Projects/Drop-Seq/MYB83/star_gene_exon_tagged_800.dge.txt.gz", header=T, stringsAsFactors=F, row.names = 'GENE') 
+
+
+myb46 = read.table("/Users/gturco/Documents/Projects/Drop-Seq/MYB46/star_gene_exon_tagged_1000.dge.txt.gz", header=T, stringsAsFactors=F, row.names = 'GENE') 
+
+WT = read.table("/Users/gturco/Documents/Projects/Drop-Seq/Col/star_gene_exon_tagged_500.dge.txt.gz", header=T, stringsAsFactors=F, row.names = 'GENE') 
+
+
+VND7.data = read.csv("/Users/gturco/Documents/Projects/Drop-Seq/star_gene_exon_tagged.clean_at_199cells_induced.dge.csv", header=T, stringsAsFactors=F, row.names = 'GENE') 
+
+WT2.data = read.csv("/Users/gturco/Documents/Projects/Drop-Seq/star_gene_exon_tagged.clean_at_198cells_uninduced.dge", header=T, stringsAsFactors=F, row.names = 'GENE') 
+
+
+```
+
+
+
+```{r}
+# Create Seurat object
+
+# Keep all genes expressed in >= 3 cells, keep all cells with >= 500 genes
+ds.83 <- CreateSeuratObject(raw.data=myb83, min.cells=3, min.genes=500, project="MYB83")
+ds.46 <- CreateSeuratObject(raw.data=myb46, min.cells=3, min.genes=500, project="MYB46")
+ds.col <- CreateSeuratObject(raw.data=WT, min.cells=3, min.genes=500, project="Col")
+
+ds.vnd <- CreateSeuratObject(raw.data=VND7.data, min.cells=3, min.genes=500, project="VND7")
+ds.col2 <- CreateSeuratObject(raw.data=WT2.data, min.cells=3, min.genes=500, project="Col2")
+
+
+ds.all <- MergeSeurat(ds.83, ds.46)
+ds.all <- MergeSeurat(ds.all, ds.col)
+ds.all <- MergeSeurat(ds.all, ds.vnd)
+ds.all <- MergeSeurat(ds.all, ds.col2)
+```
+
+```{r}
+VlnPlot(object = ds.all, c("nUMI"), group.by = "orig.ident", nCol = 2)
+VlnPlot(object = ds.all, c("nGene"), group.by = "orig.ident", nCol = 2)
+
+```
+
+
+```{r}
+ds.all <- FilterCells(object = ds.all, subset.names = c("nGene"),low.thresholds = 500, high.thresholds = 12000)
+```
+
+## Genes to potentially regress out
+
+```{r}
+
+setwd("/Users/gturco/Documents/Projects/Drop-Seq/")
+
+
+cholor.genes <- grep(pattern = "^ATCG", x = rownames(x = ds.all@data), value = TRUE)
+percent.cholor <- apply(ds.all@raw.data[cholor.genes, ],2,sum) / apply(ds.all@raw.data,2,sum)
+
+mito.genes <- grep(pattern = "^ATMG", x = rownames(x = ds.all@data), value = TRUE)
+percent.mito <- apply(ds.all@raw.data[mito.genes, ],2,sum) / apply(ds.all@raw.data,2,sum)
+
+protoplast.data <- read.csv("protoplast.csv",sep=',', header = TRUE)
+## can also add LOST to query rather than just INDUCED
+protoplast.genes <- subset(protoplast.data, PROTOPLASTING.EFFECT == "INDUCED" )$Gene.ID
+
+protoplast.genes <- intersect(protoplast.genes,rownames(ds.all@raw.data))
+
+percent.protoplast <- apply(ds.all@raw.data[protoplast.genes, ],2,sum) / apply(ds.all@raw.data,2,sum)
+
+```
+
+
+### add data to object
+
+```{r}
+
+ds.all <- AddMetaData(object = ds.all, metadata = percent.mito, col.name = "percent.mito")
+ds.all <- AddMetaData(object = ds.all, metadata = percent.cholor, col.name = "percent.cholor")
+ds.all <- AddMetaData(object = ds.all, metadata = percent.protoplast, col.name = "percent.protoplast")
+
+```
+## what does data look at
+
+Much higher precentage of protoplast induced genes than JGI
+Diane: is checking to see if there is also a higher percentage of stressed genes my guess is yes since plants were grown without glucose
+
+
+```{r}
+VlnPlot(object = ds.all, c("nUMI"), group.by = "orig.ident", nCol = 2)
+VlnPlot(object = ds.all, c("nGene"), group.by = "orig.ident", nCol = 2)
+VlnPlot(object = ds.all, c("percent.protoplast"), group.by = "orig.ident", nCol = 2)
+VlnPlot(object = ds.all, c("percent.mito"), group.by = "orig.ident", nCol = 2)
+```
+
+```{r}
+ds.all <- NormalizeData(object = ds.all, normalization.method = "LogNormalize", 
+    scale.factor = 10000)
+
+ds.all <- FindVariableGenes(object = ds.all, mean.function = ExpMean, dispersion.function = LogVMR, 
+    x.low.cutoff = 0.05, x.high.cutoff = 3, y.cutoff = 0.5)
+
+length(x = ds.all@var.genes)
+```
+### SCALE
+
+
+```{r}
+ds.all <- ScaleData(object = ds.all, vars.to.regress = c("nUMI", "percent.mito","percent.protoplast","percent.cholor"))
+```
+
+```{r}
+## MYB46 & CESA4
+GenePlot(object = ds.all, gene1 = "AT5G12870", gene2 = "AT2G01830",cex.use = 1)
+## not enough points for cesa8 	AT4G18780
+## MYB83 & CESA4
+GenePlot(object = ds.all, gene1 = "AT3G08500", gene2 = "AT5G44030",cex.use = 1)
+### AT5G44030 .17 cor
+```
+
+### PCA
+
+```{r}
+
+## changed genes to use here to spec score genes but this made if very hard to cluster!!!
+
+ds.all <- RunPCA(object = ds.all,  pcs.compute = 30, do.print = TRUE, pcs.print = 1:5,  genes.print = 20)
+
+ds.all <- ProjectPCA(object = ds.all)
+#PrintPCA(object = ds.ds, pcs.print = 1:30, genes.print = 30, use.full = FALSE)
+```
+
+
+### PCA
+
+```{r}
+VizPCA(object = ds.all, 1:2)
+PCAPlot(object = ds.all, 1, 2)
+
+PCHeatmap(object = ds.all, pc.use = 1:12, cells.use = 50, do.balanced = TRUE, label.columns = FALSE, use.full = FALSE)
+```
+
+JackStraw
+
+```{r}
+ds.all <- JackStraw(object = ds.all, num.pc = 30, num.replicate = 100)
+JackStrawPlot(object = ds.all, PCs=1:30)
+PCElbowPlot(object = ds.all, num.pc = 30)
+
+```
+
+### t-SNE
+
+```{r}
+ds.all <- FindClusters(object = ds.all, reduction.type = "pca", dims.use = c(1:12), resolution = 0.4, print.output = 0, save.SNN = FALSE, plot.SNN = TRUE, force.recalc = TRUE)
+ds.all <- RunTSNE(object = ds.all, dims.use = c(1:12), do.fast = T, force.recalc=T)
+```
+
+```{r}
+p1 <- TSNEPlot(ds.all, do.return = T, pt.size = 0.5, group.by = "orig.ident")
+p2 <- TSNEPlot(ds.all, do.label = T, do.return = T, pt.size = 0.5)
+plot_grid(p1, p2)
+```
+
